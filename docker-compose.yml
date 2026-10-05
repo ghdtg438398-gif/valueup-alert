@@ -1,0 +1,14 @@
+services:
+  valueup:
+    build: .
+    container_name: valueup-alert
+    env_file: .env
+    environment:
+      - TZ=Asia/Seoul
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      # 커버리지 원본을 공유폴더에 두는 경우 그 폴더를 연결하고 .env 의 COVERAGE_FILE 을 /shared/coverage.xlsx 로
+      # - /mnt/research_share/valueup:/shared
+    restart: unless-stopped

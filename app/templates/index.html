@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block head %}<meta http-equiv="refresh" content="300">{% endblock %}
+{% block content %}
+{% macro link() -%}
+/?{% for k, v in f.items() %}{% set v2 = kwargs[k] if k in kwargs else v %}{% if v2 %}{{k}}={{v2|urlencode}}&{% endif %}{% endfor %}
+{%- endmacro %}
+<style>
+.banner{display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;margin-bottom:18px}
+.kpi{flex:0 0 300px;background:linear-gradient(0deg,var(--accent-soft),var(--panel) 70%);border:1px solid var(--accent);border-radius:12px;padding:14px 16px}
+.kpi small{color:var(--muted);font-weight:600;font-size:12px}.kpi b{display:block;font-size:26px;letter-spacing:-.02em;margin-top:2px}
+.kpi span{font-size:12px;color:var(--muted)}
+.ctrl{display:flex;gap:10px;align-items:center;margin-left:auto;flex-wrap:wrap}
+.tog{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:13px;font-weight:600;text-decoration:none}
+.sw{width:34px;height:20px;border-radius:99px;background:#c9ccd3;position:relative;flex:none}
+.sw:after{content:"";position:absolute;left:3px;top:3px;width:14px;height:14px;border-radius:50%;background:#fff;transition:.15s}
+.sw.on{background:var(--ok)}.sw.on:after{left:17px}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel)}
+.seg a{padding:6px 11px;font-size:12.5px;font-weight:600;color:var(--muted);text-decoration:none}
+.seg a.on{background:var(--info-soft);color:var(--info)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;padding:14px 16px;border-bottom:1px solid var(--line);align-items:center}
+.chip{border:1px solid var(--line);border-radius:99px;padding:5px 11px;font-weight:600;font-size:13px;text-decoration:none;background:var(--panel)}
+.chip em{font-style:normal;color:var(--muted);margin-left:4px;font-weight:500}
+.chip.on{background:var(--ink);color:var(--panel);border-color:var(--ink)}.chip.on em{color:inherit;opacity:.7}
+.chips .right{margin-left:auto;display:flex;gap:8px;align-items:center}
+.co{white-space:nowrap}.co b{font-size:14.5px}.co small{display:block;color:var(--muted);font-size:12px}
+.cap small{display:block;font-size:11px;color:var(--muted);font-weight:500}
+.key{font-size:12.5px;max-width:320px;color:var(--ink);opacity:.85}
+.ck{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:600;margin-right:10px;cursor:pointer;white-space:nowrap}
+.ck input{width:16px;height:16px;accent-color:var(--ok);margin:0}
+.ck.dim{opacity:.4}
+.pub-no{background:var(--accent-soft);color:var(--accent)}
+.pub-yes{background:var(--ok-soft);color:var(--ok)}
+tr.out td{color:var(--muted)} tr.out .pill{opacity:.5}
+.day td{background:var(--bg);font-size:12px;font-weight:700;color:var(--muted);padding:7px 12px}
+.tablewrap{overflow-x:auto}
+</style>
+
+<div class="banner">
+  <div class="kpi"><small>오늘 신규 공시 · {{ today.strftime('%m/%d') }}({{ '월화수목금토일'[today.weekday()] }})</small>
+    <b>{{ banner.n }}건</b><span>계획 {{ banner.plan }} · 이행 {{ banner.impl }} · 작성 대상 {{ banner.target }}건</span></div>
+  <div class="ctrl">
+    <a class="tog" href="{{ link(all=0 if f.all else 1) }}"><span class="sw {{ '' if f.all else 'on' }}"></span>작성 대상만
+      <span class="muted" style="font-weight:500">발표일 시총 300억~5,000억</span></a>
+    <div class="seg">{% for k, v in PERIODS.items() %}<a class="{{ 'on' if f.period==k }}" href="{{ link(period=k) }}">{{ v }}</a>{% endfor %}</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="chips">
+    <a class="chip {{ 'on' if not f.analyst }}" href="{{ link(analyst='') }}">전체<em>{{ counts[''] }}</em></a>
+    {% for a in analysts %}<a class="chip {{ 'on' if f.analyst==a }}" href="{{ link(analyst=a) }}">{{ a }}<em>{{ counts.get(a, 0) }}</em></a>{% endfor %}
+    <a class="chip {{ 'on' if f.analyst=='__none__' }}" href="{{ link(analyst='__none__') }}">커버리지 외<em>{{ counts['__none__'] }}</em></a>
+    <div class="right">
+      <div class="seg">{% for k, v in [('', '계획·이행'), ('계획', '계획'), ('이행', '이행')] %}<a class="{{ 'on' if f.t==k }}" href="{{ link(t=k) }}">{{ v }}</a>{% endfor %}</div>
+      <a class="btn" href="/export.xlsx?{{ qs }}">⬇ 엑셀</a>
+    </div>
+  </div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>시각</th><th>종목</th><th>공시 구분</th><th class="num">발표일 시총</th><th class="num">종가</th><th class="hide-m">핵심</th><th>담당</th><th>발간 체크</th><th>상태</th></tr></thead>
+    <tbody>
+    {% set ns = namespace(day='') %}
+    {% for r in rows %}
+      {% if f.period != 'today' and r.rcept_dt != ns.day %}{% set ns.day = r.rcept_dt %}
+        <tr class="day"><td colspan="9">{{ r.rcept_dt[4:6]|int }}월 {{ r.rcept_dt[6:]|int }}일</td></tr>{% endif %}
+      {% set tp = r.kind_type or '계획' %}
+      <tr class="{{ 'out' if r.target is false }}" data-id="{{ r.acptno }}">
+        <td class="muted mono">{{ (r.disclosed_at or '')[11:16] }}</td>
+        <td class="co"><a href="/filing/{{ r.acptno }}" style="text-decoration:none"><b>{{ r.corp_name }}</b></a>
+          <small class="mono">{{ r.stock_code or '-' }} · {{ r.market or '' }}{% if r.is_correction %} · 정정{% endif %}</small></td>
+        <td><span class="pill t-{{ tp }}">{{ tp }}</span></td>
+        <td class="num cap">{% if r.ann_cap %}<b>{{ fmt_cap(r.ann_cap) }}</b><small>{% if r.target is false %}대상 외{% else %}{{ fmt_dt(r.ann_dt) }} 종가{% if not r.ann_final %} · 잠정{% endif %}{% endif %}</small>{% else %}<span class="muted">확인 중</span>{% endif %}</td>
+        <td class="num">{{ '{:,}'.format(r.ann_close) if r.ann_close else '-' }}</td>
+        <td class="key hide-m">{{ key_line(r, 70) }}</td>
+        <td style="font-size:12.5px">{{ r.analysts|join(', ') if r.analysts else '—' }}</td>
+        <td>{% if r.target is false %}<span class="muted" style="font-size:12px">작성 대상 아님</span>{% else %}
+          <label class="ck {{ 'dim' if tp == '이행' }}"><input type="checkbox" data-f="plan" {{ 'checked' if r.pub_plan }}>계획 발간</label>
+          <label class="ck {{ 'dim' if tp in ('계획','재공시') }}"><input type="checkbox" data-f="impl" {{ 'checked' if r.pub_impl }}>이행 발간</label>{% endif %}</td>
+        <td>{% if r.target is not false %}<span class="pill {{ 'pub-no' if r.pub_status == '미발간' else 'pub-yes' }}">{{ r.pub_status }}</span>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="9" class="muted" style="text-align:center;padding:40px">{{ PERIODS[f.period] }} 조건에 맞는 공시가 없습니다.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <div class="muted" style="padding:10px 16px;font-size:12px">발표일 시총 = 공시일 종가 × 상장주식수 (한국투자증권) · 장중 공시는 15:30 종가 확정 전까지 잠정 · PDF·한글·워드 첨부 확인된 공시만</div>
+</div>
+<script>
+document.querySelectorAll('input[data-f]').forEach(cb => cb.addEventListener('change', async e => {
+  const tr = cb.closest('tr');
+  const r = await fetch(`/filing/${tr.dataset.id}/pub`, {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({field: cb.dataset.f, value: cb.checked})});
+  if (!r.ok) { cb.checked = !cb.checked; alert('저장 실패'); return; }
+  const js = await r.json(); const pill = tr.querySelector('td:last-child .pill');
+  pill.textContent = js.pub_status; pill.className = 'pill ' + (js.pub_status === '미발간' ? 'pub-no' : 'pub-yes');
+}));
+</script>
+{% endblock %}

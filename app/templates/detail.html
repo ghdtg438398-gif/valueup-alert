@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}{{f.corp_name}} · 밸류업 공시{% endblock %}
+{% block content %}
+<style>
+.grid{display:grid;grid-template-columns:1fr 320px;gap:20px;align-items:start}
+.sec{padding:18px 20px;border-bottom:1px solid var(--line)}
+.sec:last-child{border-bottom:0}
+.sec h3{font-size:13px;color:var(--muted);margin:0 0 10px;font-weight:700}
+.kv{display:grid;grid-template-columns:110px 1fr;gap:6px 12px}
+.kv dt{color:var(--muted)} .kv dd{margin:0}
+pre{white-space:pre-wrap;font:inherit;margin:0}
+.files a{display:flex;justify-content:space-between;align-items:center;gap:10px;word-break:break-all;padding:8px 0;text-decoration:none;border-bottom:1px dashed var(--line)}
+.files a:last-child{border-bottom:0}
+@media (max-width:900px){.grid{grid-template-columns:1fr}}
+</style>
+<p class="muted"><a href="/">← 목록</a></p>
+<h1>{{f.corp_name}} <span class="muted mono" style="font-weight:500;font-size:16px">{{f.stock_code or ''}} · {{f.market or ''}}</span></h1>
+<p class="sub"><span class="pill t-{{ f.kind_type or '계획' }}">{{ f.kind_type or '-' }}</span> {{f.report_nm}} · {{f.disclosed_at or f.rcept_dt}}
+  {% if f.valid %}<span class="pill p-완료">첨부 확인·인정</span>{% else %}<span class="pill p-미착수">첨부 없음·미인정</span>{% endif %}</p>
+
+<div class="grid">
+<div class="card">
+  {% if f.ai_summary %}
+  <div class="sec"><h3>🤖 AI 요약 (첨부 PDF 기준)</h3><pre>{{f.ai_summary}}</pre></div>
+  {% endif %}
+  <div class="sec"><h3>시가총액</h3>
+    <dl class="kv">
+      <dt>발표일 시총</dt><dd><b>{{ fmt_cap(f.ann_cap) }}</b> {% if f.ann_dt %}<span class="muted">({{ fmt_dt(f.ann_dt) }} 종가 {{ fmt_won(f.ann_close) }}{% if not f.ann_final %} · 잠정{% endif %})</span>{% endif %}
+        {% if f.target is false %}<span class="pill p-제외">작성 대상 아님</span>{% elif f.target %}<span class="pill p-완료">작성 대상</span>{% endif %}</dd>
+      <dt>현재 시총</dt><dd>{{ fmt_cap(f.q.mktcap) }} <span class="muted">({{ f.q.basis_label }} {{ fmt_won(f.q.close) }})</span></dd>
+    </dl>
+  </div>
+  <div class="sec"><h3>공시 본문 요지</h3>
+    <dl class="kv">
+      <dt>계획서 명칭</dt><dd>{{f.plan_name or '-'}}</dd>
+      <dt>고배당기업</dt><dd>{{f.high_dividend or '-'}}</dd>
+      <dt>PBR 개선계획</dt><dd>{{f.pbr_plan or '-'}}</dd>
+      <dt>이사회 결의일</dt><dd>{{f.decision_date or '-'}}</dd>
+    </dl>
+  </div>
+  {% if f.main_content %}<div class="sec"><h3>주요 내용</h3><pre>{{f.main_content}}</pre></div>{% endif %}
+  {% if f.related %}<div class="sec"><h3>관련 공시 (이전 계획·예고 등)</h3>
+    <dl class="kv">{% for r in f.related %}<dt class="mono">{{r.date}}</dt><dd>{{r.title}}</dd>{% endfor %}</dl></div>{% endif %}
+  {% if f.body_text %}<div class="sec"><details><summary class="muted">공시 본문 전체 텍스트</summary><pre style="margin-top:10px">{{f.body_text}}</pre></details></div>{% endif %}
+</div>
+
+<div>
+  <div class="card" style="margin-bottom:16px">
+    <div class="sec"><h3>담당 · 발간 체크</h3>
+      <p style="margin:0 0 12px"><b>{{ f.analysts|join(', ') if f.analysts else '커버리지 외' }}</b></p>
+      <div data-id="{{ f.acptno }}" style="display:grid;gap:8px">
+        <label><input type="checkbox" data-f="plan" {{ 'checked' if f.pub_plan }}> 계획 공시 기준 발간</label>
+        <label><input type="checkbox" data-f="impl" {{ 'checked' if f.pub_impl }}> 이행 공시 기준 발간</label>
+        <span class="pill tag" id="pubst" style="justify-self:start">{{ f.pub_status }}</span>
+      </div>
+      {% if f.pub_at %}<p class="muted" style="font-size:12px;margin:8px 0 0">최종 체크 {{ f.pub_at }}</p>{% endif %}
+      <script>
+      document.querySelectorAll('input[data-f]').forEach(cb => cb.addEventListener('change', async () => {
+        const r = await fetch('/filing/{{ f.acptno }}/pub', {method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({field: cb.dataset.f, value: cb.checked})});
+        if (r.ok) document.getElementById('pubst').textContent = (await r.json()).pub_status; else cb.checked = !cb.checked;
+      }));
+      </script>
+    </div>
+  </div>
+  <div class="card">
+    <div class="sec files"><h3>첨부파일</h3>
+      {% for a in f.attachments %}
+        <a href="{{ '/files/' ~ a.local if a.local else a.url }}" target="_blank"><span>{{a.name}}</span><span class="pill tag" style="flex:none">{{a.ext|upper}}</span></a>
+      {% else %}<p class="muted" style="margin:0">확인된 첨부파일 없음</p>{% endfor %}
+    </div>
+    <div class="sec" style="display:flex;gap:8px;flex-wrap:wrap">
+      <a class="btn" href="{{ kind_url(f.acptno) }}" target="_blank">KIND 원문</a>
+      {% if f.rcept_no %}<a class="btn" href="{{ dart_url(f.rcept_no) }}" target="_blank">DART</a>{% endif %}
+      <form method="post" action="/filing/{{f.acptno}}/recheck"><button>첨부 재확인</button></form>
+    </div>
+    <div class="sec muted" style="font-size:12px">감지 {{f.detected_at}} ({{f.source}}) · 알림 {{f.alerted_at or '-'}}{% if f.last_error %}<br>오류: {{f.last_error}}{% endif %}</div>
+  </div>
+</div>
+</div>
+{% endblock %}

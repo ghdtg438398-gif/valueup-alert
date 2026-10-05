@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}정기 리포트 · 밸류업 공시{% endblock %}
+{% block content %}
+<style>
+.tg{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;white-space:pre-wrap;max-width:620px;margin-bottom:12px;line-height:1.55}
+.tg a{color:var(--info)}
+</style>
+<h1>정기 리포트</h1>
+<p class="sub">영업일 {{ times|join(' · ') }}에 직전 리포트 이후 인정된 공시를 묶어 텔레그램으로 보냅니다.
+  {% if last %}최근 발송: {{ last.slot }} ({{ last.n }}건){% endif %}</p>
+{% if msg %}<div class="flash">{{ msg }}</div>{% endif %}
+<p class="muted" style="margin-bottom:10px">다음 리포트에 들어갈 내용 미리보기</p>
+{% for m in msgs %}<div class="tg">{{ m|replace('\n', '<br>')|safe }}</div>{% endfor %}
+<form method="post" action="/digest/send" onsubmit="return confirm('지금 단톡방으로 보낼까요? 보낸 공시는 다음 정기 리포트에서 빠집니다.')">
+  <button class="primary">지금 보내기</button>
+</form>
+{% endblock %}

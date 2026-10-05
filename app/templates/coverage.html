@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}커버리지 · 밸류업 공시{% endblock %}
+{% block content %}
+<style>
+.grid{display:grid;grid-template-columns:360px 1fr;gap:20px;align-items:start}
+.sec{padding:16px 18px;border-bottom:1px solid var(--line)}
+.sec:last-child{border-bottom:0}
+.sec h3{font-size:13px;color:var(--muted);margin:0 0 10px}
+@media (max-width:900px){.grid{grid-template-columns:1fr}}
+</style>
+<h1>애널리스트 커버리지</h1>
+<p class="sub">아래 <b>원본 파일</b>이 기준입니다. 파일을 고치면 5분 안에 자동 반영되고, 리포트 직전에도 한 번 더 읽습니다.</p>
+{% if msg %}<div class="flash">{{msg}}</div>{% endif %}
+
+<div class="grid">
+<div>
+  <div class="card" style="margin-bottom:16px">
+    <div class="sec"><h3>원본 파일</h3>
+      <p style="margin:0 0 8px;word-break:break-all"><b>{{ src.source }}</b></p>
+      <p class="muted" style="margin:0 0 10px;font-size:12px">
+        반영 {{ src.loaded_at or '-' }} · {{ src.count or 0 }}개 종목 · 확인 {{ src.checked_at or '-' }}</p>
+      {% if src.error %}<p style="color:var(--accent);font-size:12px;margin:0 0 10px">⚠ {{ src.error }}</p>{% endif %}
+      {% if src.warnings %}<details style="margin-bottom:10px"><summary style="font-size:12px;color:var(--warn)">코드를 못 찾은 종목 {{ src.warnings|length }}건</summary>
+        <ul style="font-size:12px;margin:6px 0 0;padding-left:18px">{% for w in src.warnings %}<li>{{ w }}</li>{% endfor %}</ul></details>{% endif %}
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <form method="post" action="/coverage/reload"><button>지금 다시 읽기</button></form>
+        {% if not src.is_url %}<a class="btn" href="/coverage/source.xlsx">원본 내려받기</a>{% endif %}
+      </div>
+    </div>
+  </div>
+  {% if not src.is_url %}
+  <div class="card" style="margin-bottom:16px">
+    <div class="sec"><h3>새 엑셀로 원본 교체</h3>
+      <form method="post" action="/coverage/upload" enctype="multipart/form-data" style="display:grid;gap:10px">
+        <input type="file" name="file" accept=".xlsx,.xls,.csv" required>
+        <button class="primary">업로드</button>
+      </form>
+      <p class="muted" style="font-size:12px;margin:12px 0 0">
+        열 이름: <b>애널리스트 · 종목코드 · 종목명</b> (코드나 이름 중 하나만 있어도 됨).<br>
+        시트별로 애널리스트를 나눈 파일이나, 첫 행에 이름을 쓰고 아래로 종목을 나열한 가로형도 인식합니다.<br>
+        <a href="/coverage/template.xlsx">양식 내려받기</a> · <a href="/coverage/export.xlsx">현재 목록 내려받기</a>
+      </p>
+    </div>
+  </div>
+  {% endif %}
+  <div class="card">
+    <div class="sec"><h3>애널리스트 ({{ summary|length }}명)</h3></div>
+    <table>
+      <thead><tr><th>이름</th><th>종목수</th><th>텔레그램</th></tr></thead>
+      <tbody>
+      {% for s in summary %}
+        <tr><td><a href="/coverage?analyst={{s.analyst}}">{{s.analyst}}</a></td><td class="mono">{{s.n}}</td>
+          <td>{% if s.telegram_chat_id %}<span class="pill p-완료">연결됨</span>{% else %}<span class="muted" style="font-size:12px">/register {{s.analyst}}</span>{% endif %}</td></tr>
+      {% else %}<tr><td colspan="3" class="muted">아직 등록된 커버리지가 없습니다.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="sec"><h3>{{ analyst ~ ' 담당 종목' if analyst else '전체 종목' }} · {{ items|length }}개 {% if analyst %}<a href="/coverage" style="font-weight:400">(전체 보기)</a>{% endif %}</h3></div>
+  <table>
+    <thead><tr><th>애널리스트</th><th>종목코드</th><th>종목명</th></tr></thead>
+    <tbody>
+    {% for c in items %}<tr><td>{{c.analyst}}</td><td class="mono">{{c.stock_code}}</td><td>{{c.corp_name}}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+</div>
+{% endblock %}

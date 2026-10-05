@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="EUC-KR" ?>
+<protocol>
+<chartdata symbol="388050" name="지투파워" count="4" timeframe="day" precision="0" origintime="20220401">
+<item data="20260929|11800|12100|11700|12000|100000" />
+<item data="20260930|12000|12500|11900|12340|250000" />
+<item data="20261001|12400|12800|12300|12650|180000" />
+<item data="20261002|12650|12900|12500|12800|90000" />
+</chartdata>
+</protocol>
