@@ -1,0 +1,61 @@
+name: 밸류업 공시 알림
+
+on:
+  schedule:
+    # 영업일 09:00 / 15:35 KST (= 00:00 / 06:35 UTC). 공휴일은 프로그램이 알아서 건너뜀
+    - cron: "0 0 * * 1-5"
+    - cron: "35 6 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      slot:
+        description: "강제 발송 회차 (비우면 수집·대시보드만 갱신). 예: 09:00 또는 15:30"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: valueup
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: github-pages
+    env:
+      TZ: Asia/Seoul
+      DART_API_KEY: ${{ secrets.DART_API_KEY }}
+      KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
+      KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      DASHBOARD_URL: ${{ vars.DASHBOARD_URL }}
+      COVERAGE_FILE: coverage/2026_coverage.xlsx
+      DOWNLOAD_FILES: "false"
+      DIGEST_TIMES: "09:00,15:30"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: 수집·판별·알림·대시보드 생성
+        run: python run.py --action ${{ github.event.inputs.slot && format('--slot {0}', github.event.inputs.slot) || '' }}
+      - name: 상태(DB) 저장
+        run: |
+          git config user.name "valueup-bot"
+          git config user.email "valueup-bot@users.noreply.github.com"
+          git add -f data/valueup.db docs
+          git commit -m "update $(date '+%Y-%m-%d %H:%M')" || echo "변경 없음"
+          git push
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - uses: actions/deploy-pages@v4
+        continue-on-error: true   # Pages 미설정 시에도 알림은 정상 동작
