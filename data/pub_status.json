@@ -19,11 +19,13 @@
    "impl_by": "이원재"
   },
   "192650": {
-   "plan": false,
+   "plan": true,
    "impl": false,
    "reject": false,
    "by": "권지승",
-   "at": "2026-10-06 15:13:08"
+   "at": "2026-10-06 15:13:14",
+   "plan_date": "2026-10-06",
+   "plan_by": "이나연"
   },
   "221840": {
    "plan": true,
