@@ -21,9 +21,9 @@
   "192650": {
    "plan": false,
    "impl": false,
-   "reject": true,
+   "reject": false,
    "by": "권지승",
-   "at": "2026-10-06 15:13:05"
+   "at": "2026-10-06 15:13:08"
   },
   "221840": {
    "plan": true,
