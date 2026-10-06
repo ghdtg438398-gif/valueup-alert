@@ -60,6 +60,9 @@ ROUTES = {
     "99928.htm": fx("attach.htm"),
     "72101.htm": fx("main.htm"),
     ".pdf": b"%PDF-1.4 fake",
+    "acptno=20261005000222": fx("viewer_corr.html"),
+    "docNo=20261005000111": fx("contents_corr.html"),
+    "80000.htm": fx("main_corr.htm"),
 }
 
 
@@ -371,3 +374,35 @@ def test_kind_blocked_fallback(env):
                 "rcept_dt": "20261002", "source": "dart"})
     f = db.get_filing("20261002000999")
     assert f["valid"] == 1 and f["kind_type"] == "이행" and f["last_error"].startswith("첨부 미확인")
+
+
+def test_correction_replaces_original(env):
+    from app import kind
+    w, db, sent = env
+    html = fx("list.html").decode().replace(
+        "<tbody>", """<tbody><tr><td class="first txc">4</td><td class="txc">2026-10-05 10:00</td>
+<td><img alt='코스닥'> <a title='지투파워'>지투파워</a></td>
+<td><a href="#viewer" onclick="openDisclsViewer('20261005000222','')" title='기업가치 제고 계획(자율공시)'><font color="#FF8040">[정정]</font>기업가치 제고 계획(자율공시)</a></td></tr>""")
+    rows, _ = kind.parse_valueup_list(html)
+    assert rows[0]["title"] == "[정정]기업가치 제고 계획(자율공시)"
+    w.kind.s.routes["disclsstat.do#POST"] = html.encode()
+    w.poll_kind(days=7)
+    ids = [r["acptno"] for r in db.list_filings(days=0, limit=50)]
+    assert "20261005000222" in ids and "20260930000281" not in ids          # 원본은 정정본으로 대체
+    c = db.get_filing("20261005000222")
+    assert c["is_correction"] == 1 and c["plan_name"].endswith("(정정)") and "배당성향 35%" in c["main_content"]
+    assert db.get_filing("20260930000281")["superseded_by"] == "20261005000222"
+    # 발표일 시총은 정정일(10/5)이 아니라 최초 공시일(9/30) 종가 기준
+    assert c["orig_disclosed_at"] == "2026-09-30 11:39"
+    w.compute_caps()
+    c = db.get_filing("20261005000222")
+    assert c["ann_dt"] == "20260930" and c["ann_close"] == 12340
+
+
+def test_reject_status(env, tmp_path, monkeypatch):
+    from app import pubsync
+    w, db, sent = env
+    monkeypatch.setattr(pubsync, "PATH", tmp_path / "p.json")
+    pubsync.set_pub("388050", "plan", True)
+    pubsync.set_pub("388050", "reject", True)
+    assert pubsync.company_status("388050") == "발간 거절"

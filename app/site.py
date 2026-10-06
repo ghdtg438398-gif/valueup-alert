@@ -27,7 +27,7 @@ def rows_for_site(days=370) -> list[dict]:
             "target": r["target"], "key": digest.key_line(r, 80), "baseAnalysts": cov.get(r["stock_code"] or "", []),
             "analysts": db.analysts_for(r["stock_code"]) if r["stock_code"] else [],
             "pub": pubsync.company_status(r["stock_code"], implset),
-            "url": telegram.kind_url(r["acptno"]),
+            "url": telegram.kind_url(r["acptno"]), "corr": bool(r.get("is_correction")),
             "unverified": str(r.get("last_error") or "").startswith("첨부 미확인"),
         })
     return out

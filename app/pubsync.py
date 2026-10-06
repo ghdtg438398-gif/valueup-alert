@@ -78,9 +78,12 @@ def impl_codes() -> set:
 
 
 def company_status(code, implset=None) -> str:
-    """1) 계획 미체크 → 미발간  2) 계획✓ + 이행 공시 있음 → 이행 미발간
+    """0) 발간 거절 체크 → 발간 거절
+       1) 계획 미체크 → 미발간  2) 계획✓ + 이행 공시 있음 → 이행 미발간
        3) 계획✓ + 이행 공시 없음 → 이행 미공시  4) 계획✓ + 이행✓ → 발간 완료"""
     p = state()["pub"].get(code or "", {})
+    if p.get("reject"):
+        return "발간 거절"
     if not p.get("plan"):
         return "미발간"
     if p.get("impl"):

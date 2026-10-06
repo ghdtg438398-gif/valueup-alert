@@ -46,6 +46,10 @@ class Worker:
         if db.filing_exists(acptno):
             # DART 쪽에서 더 정확한 코드가 오면 보강
             cur = db.get_filing(acptno)
+            if dart.is_correction(item["report_nm"]) and not cur.get("is_correction"):
+                # 예전에 정정 표시 없이 들어온 정정공시 → 정정본 내용으로 다시 확인
+                db.update_filing(acptno, is_correction=1, report_nm=re.sub(r"\s{2,}", " ", item["report_nm"]).strip())
+                self.check(acptno, silent=True)
             upd = {k: item[k] for k in ("stock_code", "corp_code", "rcept_no", "disclosed_at", "market")
                    if item.get(k) and not cur.get(k)}
             db.update_filing(acptno, **upd)
@@ -90,6 +94,10 @@ class Worker:
             log.warning("KIND 확인 실패 %s: %s", acptno, e)
             return
         body = res.get("body", {})
+        if f.get("is_correction") or res.get("prior_dates"):
+            hidden = db.supersede(acptno, f["corp_name"], f.get("stock_code"), res.get("prior_dates") or [], f["rcept_dt"])
+            if hidden:
+                log.info("정정공시 %s → 정정 전 공시 %s 숨김", f["corp_name"], hidden)
         upd = {
             "attachments": res["attachments"],
             "valid": int(res["valid"]),
@@ -225,7 +233,7 @@ class Worker:
         ok = fail = 0
         market.LAST_ERROR.clear()
         for f in db.caps_pending(limit=3000):
-            basis = market.announce_basis(f.get("disclosed_at"), f["rcept_dt"])
+            basis = market.announce_basis(f.get("orig_disclosed_at") or f.get("disclosed_at"), f["rcept_dt"])
             q = market.cap_on(f["stock_code"], f.get("corp_code"), basis)
             if q["close"]:
                 db.update_filing(f["acptno"], ann_close=q["close"], ann_cap=q["mktcap"], ann_dt=q["close_dt"],

@@ -49,6 +49,7 @@ tr.out td{color:var(--muted)}tr.out .pill{opacity:.5}
 .sbtn em{font-style:normal;margin-left:5px;opacity:.7}.sbtn.on{outline:2px solid var(--ink);outline-offset:-1px}
 .st-no{background:var(--accent-soft);color:var(--accent)}.st-wait{background:var(--info-soft);color:var(--info)}
 .st-todo{background:#fdf3d7;color:#9a6700}.st-done{background:var(--ok-soft);color:var(--ok)}
+.st-rej{background:var(--line);color:var(--muted)}.ck.rej{color:var(--muted)}.ck.rej input{accent-color:#6b6f78}
 .asg{font-size:12.5px;position:relative;white-space:nowrap}.asg small{color:var(--muted)}
 .asg select.as{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
 .asg:hover .who{text-decoration:underline dotted}
@@ -81,8 +82,8 @@ tr.out td{color:var(--muted)}tr.out .pill{opacity:.5}
 let D = {{ data_json|safe }};
 const S = {period: 'today', analyst: '', type: '', target: true, status: ''};
 const P = {today: '오늘', week: '이번 주', month: '최근 30일', year: '1년'};
-const ST = ['미발간', '이행 미공시', '이행 미발간', '발간 완료'];
-const STC = {'미발간': 'st-no', '이행 미공시': 'st-wait', '이행 미발간': 'st-todo', '발간 완료': 'st-done'};
+const ST = ['미발간', '이행 미공시', '이행 미발간', '발간 완료', '발간 거절'];
+const STC = {'미발간': 'st-no', '이행 미공시': 'st-wait', '이행 미발간': 'st-todo', '발간 완료': 'st-done', '발간 거절': 'st-rej'};
 const W = '일월화수목금토';
 const ymd = d => d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
 const td = new Date(+D.today.slice(0,4), +D.today.slice(4,6) - 1, +D.today.slice(6));
@@ -140,6 +141,7 @@ async function refresh() {  // 내려받은 파일이 오래돼도 저장소의 
 function analystsOf(r) { const a = STATE.assign[r.code]; if (a && a.analyst) return a.analyst === '-' ? [] : [a.analyst]; return r.baseAnalysts || r.analysts || []; }
 function implDisclosed(code) { return D.implCodes.includes(code) || D.rows.some(x => x.code === code && x.type.startsWith('이행')); }
 function statusOf(code) { const p = STATE.pub[code] || {};
+  if (p.reject) return '발간 거절';
   if (!p.plan) return '미발간'; if (p.impl) return '발간 완료'; return implDisclosed(code) ? '이행 미발간' : '이행 미공시'; }
 
 function base() { const s = since(S.period);
@@ -184,14 +186,15 @@ function render() {
     const out = r.target === false; const p = STATE.pub[r.code] || {}; const st = statusOf(r.code);
     h += `<tr class="${out ? 'out' : ''}"><td class="muted">${r.time}</td>
       <td class="co"><a href="${esc(r.url)}" target="_blank">${esc(r.name)}</a><small>${esc(r.code)} · ${esc(r.market)}</small></td>
-      <td><span class="pill t-${esc(r.type)}">${esc(r.type)}</span>${r.unverified ? ' <span class="muted" title="KIND 접속 불가로 첨부 미확인">⚠</span>' : ''}</td>
+      <td><span class="pill t-${esc(r.type)}">${esc(r.type)}</span>${r.corr ? ' <span class="pill st-todo" title="정정공시 — 정정 전 공시는 목록에서 대체됨">정정</span>' : ''}${r.unverified ? ' <span class="muted" title="KIND 접속 불가로 첨부 미확인">⚠</span>' : ''}</td>
       <td class="num cap">${r.cap ? `<b>${r.capTxt}</b><small>${out ? '대상 외' : r.capDt + ' 종가' + (r.final ? '' : ' · 잠정')}</small>` : '<span class="muted">확인 중</span>'}</td>
       <td class="num hide-m">${r.close ? r.close.toLocaleString() : '-'}</td>
       <td class="key hide-m">${esc(r.key)}</td>
       <td class="asg">${assignCell(r)}</td>
       <td>${out ? '<span class="muted" style="font-size:12px">작성 대상 아님</span>' :
         `<label class="ck"><input type="checkbox" data-code="${esc(r.code)}" data-name="${esc(r.name)}" data-f="plan" ${p.plan ? 'checked' : ''}>계획 발간</label>`
-      + `<label class="ck"><input type="checkbox" data-code="${esc(r.code)}" data-name="${esc(r.name)}" data-f="impl" ${p.impl ? 'checked' : ''}>이행 발간</label>`}</td>
+      + `<label class="ck"><input type="checkbox" data-code="${esc(r.code)}" data-name="${esc(r.name)}" data-f="impl" ${p.impl ? 'checked' : ''}>이행 발간</label>`
+      + `<label class="ck rej"><input type="checkbox" data-code="${esc(r.code)}" data-name="${esc(r.name)}" data-f="reject" ${p.reject ? 'checked' : ''}>발간 거절</label>`}</td>
       <td>${out ? '' : `<span class="pill ${STC[st]}">${st}</span>`}</td></tr>`;
   }
   document.getElementById('tb').innerHTML = h || `<tr><td colspan="9" class="muted" style="text-align:center;padding:40px">${P[S.period]} 조건에 맞는 공시가 없습니다.</td></tr>`;
@@ -205,7 +208,7 @@ document.addEventListener('change', async e => {
     try {
       await saveState(d => { const c = d.pub[el.dataset.code] || {plan: false, impl: false};
         c[el.dataset.f] = val; c.by = WHO; c.at = now(); d.pub[el.dataset.code] = c; },
-        `발간 체크: ${el.dataset.name} ${el.dataset.f === 'plan' ? '계획' : '이행'}=${val ? 'O' : 'X'}`);
+        `발간 체크: ${el.dataset.name} ${({plan: '계획', impl: '이행', reject: '거절'})[el.dataset.f]}=${val ? 'O' : 'X'}`);
       toast(`${el.dataset.name}: ${statusOf(el.dataset.code)}`);
     } catch (err) { alert('저장 실패: ' + err.message); }
     render();

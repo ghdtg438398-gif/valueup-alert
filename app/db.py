@@ -75,7 +75,9 @@ def conn():
         c.close()
 
 
-MIGRATIONS = {"kind_type": "TEXT", "related": "TEXT DEFAULT '[]'", "digest_at": "TEXT",
+MIGRATIONS = {"superseded_by": "TEXT",   # 정정공시로 대체된 원본이면 정정공시 접수번호
+              "orig_disclosed_at": "TEXT",   # 정정공시면 최초 공시 시각 (발표일 시총 기준)
+              "kind_type": "TEXT", "related": "TEXT DEFAULT '[]'", "digest_at": "TEXT",
               # 발표일 시총
               "ann_close": "INTEGER", "ann_cap": "INTEGER", "ann_dt": "TEXT", "ann_final": "INTEGER DEFAULT 0",
               # 발간 체크 (계획/이행)
@@ -176,7 +178,7 @@ def pending_checks(hours: int):
 def list_filings(analyst=None, status=None, valid_only=True, q=None, days=None, limit=500, kind_type=None,
                  since=None, target_only=False):
     """since: 'YYYYMMDD' 이후 공시 / target_only: 발표일 시총 범위 안(미확인 포함)만"""
-    sql = "SELECT * FROM filings f WHERE 1=1"
+    sql = "SELECT * FROM filings f WHERE superseded_by IS NULL"
     args = []
     if since:
         sql += " AND rcept_dt >= ?"
@@ -225,6 +227,7 @@ def caps_pending(limit=300):
     with conn() as c:
         return [_row(r) for r in c.execute(
             "SELECT * FROM filings WHERE valid=1 AND stock_code IS NOT NULL AND COALESCE(ann_final,0)=0 "
+            "AND superseded_by IS NULL "
             "ORDER BY rcept_dt DESC LIMIT ?", (limit,))]
 
 
@@ -301,7 +304,8 @@ def digest_candidates():
     """리포트에 아직 포함되지 않은 인정 공시"""
     with conn() as c:
         return [_row(r) for r in c.execute(
-            "SELECT * FROM filings WHERE valid=1 AND digest_at IS NULL ORDER BY disclosed_at, acptno")]
+            "SELECT * FROM filings WHERE valid=1 AND digest_at IS NULL AND superseded_by IS NULL "
+            "ORDER BY disclosed_at, acptno")]
 
 
 def mark_digested(acptnos, when):
@@ -334,3 +338,28 @@ def pending_by_analyst(days=90):
             "WHERE f.valid=1 AND f.status IN ('미착수','작성중') "
             "AND f.rcept_dt >= strftime('%Y%m%d','now','localtime',?) "
             "GROUP BY v.analyst ORDER BY v.analyst", (f"-{int(days)} days",))]
+
+
+def supersede(new_acptno, corp_name, stock_code, dates: list[str], before_dt: str):
+    """정정공시가 나오면 같은 회사의 정정 전 공시(들)를 목록에서 숨김"""
+    with conn() as c:
+        q = "SELECT acptno FROM filings WHERE acptno<>? AND (stock_code=? OR corp_name=?) AND superseded_by IS NULL"
+        rows = [r["acptno"] for r in c.execute(q + (" AND rcept_dt IN (%s)" % ",".join("?" * len(dates)) if dates else
+                                                    " AND rcept_dt<=? ORDER BY rcept_dt DESC, acptno DESC LIMIT 1"),
+                                               (new_acptno, stock_code or "", corp_name, *(dates or [before_dt])))]
+        for a in rows:
+            c.execute("UPDATE filings SET superseded_by=?, digest_at=COALESCE(digest_at, 'superseded') WHERE acptno=?",
+                      (new_acptno, a))
+        # 발표일 시총은 정정 전 최초 공시일 기준
+        first = None
+        if rows:
+            q2 = "SELECT MIN(COALESCE(orig_disclosed_at, disclosed_at, substr(rcept_dt,1,4)||'-'||substr(rcept_dt,5,2)||'-'||substr(rcept_dt,7,2))) v " \
+                 "FROM filings WHERE acptno IN (%s)" % ",".join("?" * len(rows))
+            first = c.execute(q2, rows).fetchone()["v"]
+        elif dates:
+            d = min(dates)
+            first = f"{d[:4]}-{d[4:6]}-{d[6:]}"
+        if first:
+            c.execute("UPDATE filings SET orig_disclosed_at=?, ann_final=0 WHERE acptno=? "
+                      "AND COALESCE(orig_disclosed_at,'')<>?", (first, new_acptno, first))
+        return rows

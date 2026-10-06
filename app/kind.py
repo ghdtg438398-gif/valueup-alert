@@ -91,7 +91,8 @@ class KindClient:
     # ------------------------------------------------------------------
     def inspect(self, acptno: str) -> dict:
         v = self.fetch_viewer(acptno)
-        res = {"title": v["title"], "attachments": [], "body": {}, "attached_docs": v["attached"]}
+        res = {"title": v["title"], "attachments": [], "body": {}, "attached_docs": v["attached"],
+               "prior_dates": v.get("prior_dates", [])}
         # 본문
         if v["main"]:
             url = self.doc_url(v["main"][0][0])
@@ -155,7 +156,8 @@ def parse_valueup_list(html: str) -> tuple[list[dict], int]:
             "corp_name": (name_a.get("title") or name_a.get_text(strip=True)).strip() if name_a else "",
             "market": {"유가증권": "유가", "코스닥": "코스닥", "코넥스": "코넥스"}.get(
                 img.get("alt", "") if img else "", img.get("alt", "") if img else ""),
-            "title": (a.get("title") or a.get_text(strip=True)).strip(),
+            "title": (("[정정]" if "[정정]" in a.get_text() and "정정" not in (a.get("title") or "") else "")
+                      + (a.get("title") or a.get_text(strip=True)).strip()),
         })
     m = re.search(r"전체\s*<em>\s*([\d,]+)\s*</em>", html)
     total = int(m.group(1).replace(",", "")) if m else len(rows)
@@ -165,7 +167,7 @@ def parse_valueup_list(html: str) -> tuple[list[dict], int]:
 def parse_viewer(html: str) -> dict:
     soup = BeautifulSoup(html, "html.parser")
 
-    def opts(sel_id, split_pipe=False):
+    def opts(sel_id):
         out = []
         sel = soup.find("select", id=sel_id)
         if not sel:
@@ -174,15 +176,23 @@ def parse_viewer(html: str) -> dict:
             val = (o.get("value") or "").strip()
             if not val or not re.match(r"^\d{8,}", val):
                 continue
-            if split_pipe:
-                val = val.split("|")[0]
             out.append((val, o.get_text(" ", strip=True)))
         return out
 
+    mains = opts("mainDoc")
+    # 정정공시면 본문 목록에 원본(N)과 최신 정정본(Y)이 함께 있음 → 최신(Y)을 앞으로
+    latest = [(v.split("|")[0], t) for v, t in mains if v.endswith("|Y")]
+    older = [(v.split("|")[0], t) for v, t in mains if not v.endswith("|Y")]
+    prior_dates = []
+    for _, t in older:
+        m = re.search(r"\((\d{4})\.(\d{2})\.(\d{2})\)", t)
+        if m:
+            prior_dates.append("".join(m.groups()))
     t = soup.find("title")
     return {
         "title": t.get_text(strip=True) if t else "",
-        "main": opts("mainDoc", split_pipe=True),
+        "main": latest + older,
+        "prior_dates": prior_dates,   # 정정 전 공시 날짜들 (YYYYMMDD)
         "attached": opts("attachedDoc"),
     }
 
