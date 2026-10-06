@@ -18,6 +18,13 @@
    "impl_date": "2026-05-14",
    "impl_by": "이원재"
   },
+  "192650": {
+   "plan": false,
+   "impl": false,
+   "reject": true,
+   "by": "권지승",
+   "at": "2026-10-06 15:13:05"
+  },
   "221840": {
    "plan": true,
    "impl": true,
