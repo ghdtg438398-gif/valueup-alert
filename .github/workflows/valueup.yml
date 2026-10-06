@@ -6,6 +6,8 @@ on:
     # GitHub 예약 실행은 몇 분~수십 분 늦게 시작될 수 있음 (3시간 안이면 해당 회차로 발송)
     - cron: "0 0 * * 1-5"
     - cron: "35 6 * * 1-5"
+    # 18:00 KST: 장 마감 뒤 나온 공시의 당일 시총을 한투에서 받아 두기 (알림 없음)
+    - cron: "0 9 * * 1-5"
   workflow_dispatch:
     inputs:
       slot:
@@ -33,6 +35,7 @@ jobs:
       DART_API_KEY: ${{ secrets.DART_API_KEY }}
       KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
       KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+      KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       DASHBOARD_URL: ${{ vars.DASHBOARD_URL }}
