@@ -213,7 +213,12 @@ class Worker:
         return n
 
     def sync_coverage(self, force=False):
+        from . import teamcfg
         st = coverage.sync(self.corp_map, force=force)
+        try:
+            teamcfg.save_teams_to_db()
+        except Exception as e:  # noqa: BLE001
+            log.warning("팀 구분 읽기 실패: %s", e)
         self.status["coverage"] = st
         return st
 

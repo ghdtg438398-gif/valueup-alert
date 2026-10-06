@@ -83,6 +83,8 @@ def load(path: Path, corp_map: dict | None = None) -> tuple[list[tuple], list[st
     if path.suffix.lower() in (".xlsx", ".xlsm", ".xls"):
         blocks = load_blocks(path)
         if blocks:
+            from .teamcfg import alias
+            blocks = [(alias(a), c, n, nt) for a, c, n, nt in blocks]
             rows = list({(a, c): (a, c, n) for a, c, n, _ in blocks}.values())
             notes = {(a, c): nt for a, c, _, nt in blocks if nt}
             db.set_meta("coverage_notes", json.dumps({f"{a}|{c}": v for (a, c), v in notes.items()},

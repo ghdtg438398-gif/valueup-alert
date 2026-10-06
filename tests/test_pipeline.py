@@ -337,7 +337,8 @@ def test_action_run_site_and_buttons(env, monkeypatch, tmp_path):
     from app import pubsync
     assert pubsync.company_status("388050") == "이행 미공시"          # 계획✓, 이행 공시 없음
     x = pd.read_excel(io.BytesIO(site.status_xlsx()))
-    assert x.iloc[0].tolist()[0] == "지투파워" and x.iloc[0].tolist()[-1] == "이행 미공시"
+    row = dict(zip(x.columns, x.iloc[0].tolist()))
+    assert row["종목명"] == "지투파워" and row["발간 상태"] == "이행 미공시"
 
 
 def test_company_status_and_assign(env, tmp_path, monkeypatch):
