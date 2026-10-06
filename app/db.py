@@ -234,6 +234,10 @@ def set_status(acptno, status, by, note=""):
 
 # ---------- coverage ----------
 def analysts_for(stock_code) -> list[str]:
+    from . import pubsync
+    ov = pubsync.assigned(stock_code)
+    if ov is not None:
+        return ov
     with conn() as c:
         return [r["analyst"] for r in c.execute(
             "SELECT analyst FROM coverage WHERE stock_code=? ORDER BY analyst", (stock_code,))]

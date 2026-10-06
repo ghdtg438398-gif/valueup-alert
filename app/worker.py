@@ -324,7 +324,6 @@ class Worker:
             if slot.endswith("15:30") and config.TELEGRAM_CHAT_ID:
                 telegram.send_document(config.TELEGRAM_CHAT_ID, site.status_xlsx(),
                                        f"밸류업_현황_{now:%Y%m%d}.xlsx", "📎 밸류업 현황 (최근 1년)")
-        pubsync.pull()
         pubsync.push()
         site.build()
         return {"slot": slot, "messages": len(sent), "kind_ok": self.kind_ok}

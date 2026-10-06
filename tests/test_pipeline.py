@@ -331,9 +331,35 @@ def test_action_run_site_and_buttons(env, monkeypatch, tmp_path):
     # 텔레그램 버튼 눌림 → 발간 체크
     telegram.handle_update({"update_id": 1, "callback_query": {"id": "c1", "data": "pub:20260930000281:plan",
                                                                "from": {"id": 99, "first_name": "길동"}}})
-    assert db.get_filing("20260930000281")["pub_status"] == "계획 발간완료"
+    from app import pubsync
+    assert pubsync.company_status("388050") == "이행 미공시"          # 계획✓, 이행 공시 없음
     x = pd.read_excel(io.BytesIO(site.status_xlsx()))
-    assert x.iloc[0].tolist()[0] == "지투파워" and x.iloc[0].tolist()[-1] == "계획 발간완료"
+    assert x.iloc[0].tolist()[0] == "지투파워" and x.iloc[0].tolist()[-1] == "이행 미공시"
+
+
+def test_company_status_and_assign(env, tmp_path, monkeypatch):
+    from app import pubsync
+    w, db, sent = env
+    monkeypatch.setattr(pubsync, "PATH", tmp_path / "pub_status.json")
+    write_cov(__import__("app").config.COVERAGE_FILE, [["홍길동", "388050", "지투파워"]])
+    w.sync_coverage()
+    w.kind.s.routes["acptno=20260930000835"] = fx("viewer.html")   # 세아제강지주 이행 공시 인정
+    w.poll_kind(days=1)
+    assert pubsync.company_status("003030") == "미발간"
+    pubsync.set_pub("003030", "plan", True, "x")
+    assert pubsync.company_status("003030") == "이행 미발간"         # 이행 공시가 이미 나와 있음
+    pubsync.set_pub("003030", "impl", True, "x")
+    assert pubsync.company_status("003030") == "발간 완료"
+    pubsync.set_pub("388050", "plan", True, "x")
+    assert pubsync.company_status("388050") == "이행 미공시"
+    # 담당 직접 지정 → 알림·사이트에 반영, 파일로 저장 후 다시 읽어도 유지
+    st = pubsync.state(); st["assign"]["388050"] = {"analyst": "김철수"}; pubsync._save_state(st)
+    assert db.analysts_for("388050") == ["김철수"]
+    assert pubsync.push() and pubsync.load_file()["assign"]["388050"]["analyst"] == "김철수"
+    st["assign"]["388050"] = {"analyst": "-"}; pubsync._save_state(st)
+    assert db.analysts_for("388050") == []
+    pubsync.pull()                                                     # 파일 기준으로 되돌림
+    assert db.analysts_for("388050") == ["김철수"]
 
 
 def test_kind_blocked_fallback(env):

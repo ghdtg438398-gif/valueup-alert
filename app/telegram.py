@@ -159,12 +159,13 @@ def handle_callback(cq: dict):
     me = next((a["analyst"] for a in db.coverage_summary() if a["telegram_chat_id"] == str(frm.get("id"))), who)
     parts = data.split(":")
     if len(parts) == 3 and parts[0] == "pub" and parts[2] in ("plan", "impl"):
+        from . import pubsync
         f = db.get_filing(parts[1])
-        if f:
-            field = "pub_" + parts[2]
-            f = db.set_pub(parts[1], field, not f[field], me)
+        if f and f.get("stock_code"):
+            cur = pubsync.state()["pub"].get(f["stock_code"], {})
+            pubsync.set_pub(f["stock_code"], parts[2], not cur.get(parts[2]), me)
             _call("answerCallbackQuery", callback_query_id=cq["id"],
-                  text=f"{f['corp_name']}: {f['pub_status']} (대시보드는 다음 업데이트 때 반영)")
+                  text=f"{f['corp_name']}: {pubsync.company_status(f['stock_code'])} (사이트는 다음 업데이트 때 반영)")
             return
     _call("answerCallbackQuery", callback_query_id=cq["id"], text="처리할 수 없는 버튼입니다")
 

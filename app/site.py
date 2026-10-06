@@ -8,7 +8,7 @@ from pathlib import Path
 import pandas as pd
 from jinja2 import Environment, FileSystemLoader
 
-from . import config, db, digest, market, telegram
+from . import config, db, digest, market, pubsync, telegram
 
 
 def rows_for_site(days=370) -> list[dict]:
@@ -17,14 +17,16 @@ def rows_for_site(days=370) -> list[dict]:
         cov.setdefault(c["stock_code"], []).append(c["analyst"])
     since = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d")
     out = []
+    implset = pubsync.impl_codes()
     for r in db.list_filings(since=since, limit=5000):
         out.append({
             "id": r["acptno"], "dt": r["rcept_dt"], "time": (r["disclosed_at"] or "")[11:16],
             "name": r["corp_name"], "code": r["stock_code"] or "", "market": r["market"] or "",
             "type": r["kind_type"] or "계획", "cap": r["ann_cap"], "capTxt": market.fmt_cap(r["ann_cap"]) if r["ann_cap"] else "",
             "capDt": market.fmt_dt(r["ann_dt"]), "final": bool(r["ann_final"]), "close": r["ann_close"],
-            "target": r["target"], "key": digest.key_line(r, 80), "analysts": cov.get(r["stock_code"] or "", []),
-            "pubPlan": bool(r["pub_plan"]), "pubImpl": bool(r["pub_impl"]), "pub": r["pub_status"],
+            "target": r["target"], "key": digest.key_line(r, 80), "baseAnalysts": cov.get(r["stock_code"] or "", []),
+            "analysts": db.analysts_for(r["stock_code"]) if r["stock_code"] else [],
+            "pub": pubsync.company_status(r["stock_code"], implset),
             "url": telegram.kind_url(r["acptno"]),
             "unverified": str(r.get("last_error") or "").startswith("첨부 미확인"),
         })
@@ -53,7 +55,8 @@ def build(out_dir: Path | None = None) -> Path:
             "lastUpdate": db.get_meta("last_update") or "", "today": datetime.now().strftime("%Y%m%d"),
             "capMin": config.CAP_MIN_EOK, "capMax": config.CAP_MAX_EOK,
             "repo": os.getenv("GITHUB_REPOSITORY", ""), "branch": os.getenv("GITHUB_REF_NAME", "main"),
-            "capError": db.get_meta("cap_error") or ""}
+            "capError": db.get_meta("cap_error") or "", "state": pubsync.state(),
+            "implCodes": sorted(pubsync.impl_codes())}
     (out_dir / "data.json").write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     html = env.get_template("static.html").render(data_json=json.dumps(data, ensure_ascii=False))
     p = out_dir / "index.html"
