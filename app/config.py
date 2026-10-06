@@ -30,7 +30,7 @@ ANTHROPIC_MODEL = _getenv("ANTHROPIC_MODEL", "claude-sonnet-5-5")
 POLL_INTERVAL_SEC = int(_getenv("POLL_INTERVAL_SEC", "300"))   # KIND 밸류업 목록 조회 주기 (기본 5분)
 DART_INTERVAL_SEC = int(_getenv("DART_INTERVAL_SEC", "600"))   # DART 백업 조회 주기 (기본 10분)
 NIGHT_INTERVAL_SEC = int(_getenv("NIGHT_INTERVAL_SEC", "600")) # 야간(22~06시) 조회 주기
-BACKFILL_DAYS = int(_getenv("BACKFILL_DAYS", "30"))           # 최초 실행 시 알림 없이 불러올 과거 기간
+BACKFILL_DAYS = int(_getenv("BACKFILL_DAYS", "365"))           # 최초 실행 시 알림 없이 불러올 과거 기간
 RECHECK_HOURS = int(_getenv("RECHECK_HOURS", "48"))           # 첨부 미확인 건 재확인 기간
 # all: 커버리지 외 종목도 리포트에 포함 / coverage: 커버리지 종목만
 ALERT_SCOPE = _getenv("ALERT_SCOPE", "all").lower()

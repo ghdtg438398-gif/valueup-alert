@@ -222,12 +222,23 @@ class Worker:
 
     def compute_caps(self, now=None):
         """발표일 시총(공시일 종가 × 상장주식수) 계산·확정"""
-        for f in db.caps_pending():
+        ok = fail = 0
+        market.LAST_ERROR.clear()
+        for f in db.caps_pending(limit=3000):
             basis = market.announce_basis(f.get("disclosed_at"), f["rcept_dt"])
             q = market.cap_on(f["stock_code"], f.get("corp_code"), basis)
             if q["close"]:
                 db.update_filing(f["acptno"], ann_close=q["close"], ann_cap=q["mktcap"], ann_dt=q["close_dt"],
                                  ann_final=int(bool(q["mktcap"]) and market.is_final(basis, now)))
+            if q["mktcap"]:
+                ok += 1
+            else:
+                fail += 1
+        err = market.LAST_ERROR.get("price") or ("" if not fail else "상장주식수 조회 실패")
+        db.set_meta("cap_error", f"시총 미계산 {fail}건 · {err}" if fail else "")
+        log.info("발표일 시총 계산: 성공 %d / 실패 %d %s (KIS 키 %s)", ok, fail, err,
+                 "있음" if market.kis_enabled() else "없음 → 네이버·DART 사용")
+        return ok, fail
 
     def maybe_digest(self, now=None):
         slot = digest.due_slot(now)
@@ -280,15 +291,18 @@ class Worker:
 
 
     # ------------------------------------------------------------------
-    def run_once_action(self, now=None, force_slot=None) -> dict:
+    def run_once_action(self, now=None, force_slot=None, backfill_days=0) -> dict:
         """GitHub Actions용 1회 실행: 수집 → 판별 → 시총 → (정기 알림) → 정적 대시보드"""
         from . import site
         now = now or datetime.now()
-        if db.get_meta("initialized") is None:
-            self.backfill(config.BACKFILL_DAYS)
+        if db.get_meta("initialized") is None or backfill_days:
+            # 과거 공시는 알림 없이 적재 (이미 있는 공시는 건너뜀)
+            self.backfill(backfill_days or config.BACKFILL_DAYS)
             db.set_meta("initialized", db.now())
+        from . import pubsync
         self.refresh_corp_map()
         self.sync_coverage()
+        pubsync.pull()                             # 사이트에서 한 발간 체크 반영
         telegram.process_updates_once()            # 텔레그램 발간 체크 버튼/명령 반영
         try:
             self.poll_kind(days=4)
@@ -310,5 +324,7 @@ class Worker:
             if slot.endswith("15:30") and config.TELEGRAM_CHAT_ID:
                 telegram.send_document(config.TELEGRAM_CHAT_ID, site.status_xlsx(),
                                        f"밸류업_현황_{now:%Y%m%d}.xlsx", "📎 밸류업 현황 (최근 1년)")
+        pubsync.pull()
+        pubsync.push()
         site.build()
         return {"slot": slot, "messages": len(sent), "kind_ok": self.kind_ok}

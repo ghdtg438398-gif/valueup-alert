@@ -221,11 +221,11 @@ def set_pub(acptno, field, value, by):
     return get_filing(acptno)
 
 
-def caps_pending():
+def caps_pending(limit=300):
     with conn() as c:
         return [_row(r) for r in c.execute(
             "SELECT * FROM filings WHERE valid=1 AND stock_code IS NOT NULL AND COALESCE(ann_final,0)=0 "
-            "ORDER BY rcept_dt DESC LIMIT 300")]
+            "ORDER BY rcept_dt DESC LIMIT ?", (limit,))]
 
 
 def set_status(acptno, status, by, note=""):

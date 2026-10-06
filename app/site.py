@@ -1,6 +1,7 @@
 """GitHub Pages용 정적 대시보드 + 현황 엑셀"""
 import io
 import json
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -50,7 +51,10 @@ def build(out_dir: Path | None = None) -> Path:
     env = Environment(loader=FileSystemLoader(str(Path(__file__).parent / "templates")), autoescape=True)
     data = {"rows": rows_for_site(), "analysts": db.analyst_names(),
             "lastUpdate": db.get_meta("last_update") or "", "today": datetime.now().strftime("%Y%m%d"),
-            "capMin": config.CAP_MIN_EOK, "capMax": config.CAP_MAX_EOK}
+            "capMin": config.CAP_MIN_EOK, "capMax": config.CAP_MAX_EOK,
+            "repo": os.getenv("GITHUB_REPOSITORY", ""), "branch": os.getenv("GITHUB_REF_NAME", "main"),
+            "capError": db.get_meta("cap_error") or ""}
+    (out_dir / "data.json").write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     html = env.get_template("static.html").render(data_json=json.dumps(data, ensure_ascii=False))
     p = out_dir / "index.html"
     p.write_text(html, encoding="utf-8")

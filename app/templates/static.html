@@ -40,11 +40,18 @@ td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
 tr.out td{color:var(--muted)}tr.out .pill{opacity:.5}
 .day td{background:var(--bg);font-size:12px;font-weight:700;color:var(--muted);padding:7px 12px}
 .note{padding:10px 16px;font-size:12px;color:var(--muted)}
+.ck{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:600;margin-right:10px;cursor:pointer;white-space:nowrap}
+.ck input{width:16px;height:16px;accent-color:var(--ok);margin:0;cursor:pointer}.ck.dim{opacity:.45}
+.ck input:disabled{cursor:not-allowed}
+.warn{margin:0 0 14px;padding:10px 14px;border-radius:8px;background:var(--accent-soft);color:var(--accent);font-size:13px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--panel);padding:9px 16px;border-radius:8px;font-size:13px;opacity:0;transition:.2s;pointer-events:none}
+.toast.on{opacity:1}
 @media (max-width:760px){.hide-m{display:none}.kpi{flex-basis:100%}.ctrl{margin-left:0}}
 </style></head>
 <body>
-<header><div class="wrap bar"><div class="brand"><i></i>밸류업 공시 트래커</div><div class="upd" id="upd"></div></div></header>
+<header><div class="wrap bar"><div class="brand"><i></i>밸류업 공시 트래커</div><div class="upd" id="upd"></div><button class="btn" id="auth" style="font-size:12px"></button></div></header>
 <main><div class="wrap">
+  <div class="warn" id="caperr" hidden></div>
   <div class="banner">
     <div class="kpi" id="kpi"></div>
     <div class="ctrl">
@@ -56,13 +63,13 @@ tr.out td{color:var(--muted)}tr.out .pill{opacity:.5}
     <div class="chips"><span id="chips" style="display:contents"></span>
       <div class="right"><div class="seg" id="types"></div><button class="btn" id="xls">⬇ 엑셀</button></div></div>
     <div class="tw"><table>
-      <thead><tr><th>시각</th><th>종목</th><th>공시 구분</th><th class="num">발표일 시총</th><th class="num hide-m">종가</th><th class="hide-m">핵심</th><th>담당</th><th>발간 상태</th></tr></thead>
+      <thead><tr><th>시각</th><th>종목</th><th>공시 구분</th><th class="num">발표일 시총</th><th class="num hide-m">종가</th><th class="hide-m">핵심</th><th>담당</th><th>발간 체크</th><th>상태</th></tr></thead>
       <tbody id="tb"></tbody></table></div>
-    <div class="note">발간 체크는 텔레그램 알림의 <b>계획발간 / 이행발간</b> 버튼으로 합니다 (다음 업데이트 때 반영) · 발표일 시총 = 공시일 종가 × 상장주식수 · PDF·한글·워드 첨부 확인된 공시만</div>
+    <div class="note">발간 체크는 바로 저장되어 팀 전체에 공유됩니다 (처음 한 번 오른쪽 위 <b>체크 권한 연결</b> 필요) · 발표일 시총 = 공시일 종가 × 상장주식수 · PDF·한글·워드 첨부 확인된 공시만</div>
   </div>
-</div></main>
+</div></main><div class="toast" id="toast"></div>
 <script>
-const D = {{ data_json|safe }};
+let D = {{ data_json|safe }};
 const S = {period: 'today', analyst: '', type: '', target: true};
 const P = {today: '오늘', week: '이번 주', month: '최근 30일', year: '1년'};
 const W = '일월화수목금토';
@@ -70,6 +77,47 @@ const ymd = d => d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + S
 const td = new Date(+D.today.slice(0,4), +D.today.slice(4,6) - 1, +D.today.slice(6));
 function since(p) { const d = new Date(td); if (p === 'week') d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
   if (p === 'month') d.setDate(d.getDate() - 30); if (p === 'year') d.setDate(d.getDate() - 365); return ymd(d); }
+// ---- 발간 체크: GitHub 저장소의 data/pub_status.json 을 직접 수정 ----
+const LS = k => { try { return localStorage.getItem(k) } catch (e) { return null } };
+const LSset = (k, v) => { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k) } catch (e) {} };
+let T = LS('vu_token'); let REPO = LS('vu_repo') || D.repo; let WHO = LS('vu_who') || '';
+const FILE = 'data/pub_status.json';
+const gh = (path, opt = {}) => fetch(`https://api.github.com/repos/${REPO}/contents/${path}`, {...opt,
+  headers: {'Authorization': 'Bearer ' + T, 'Accept': 'application/vnd.github+json', ...(opt.headers || {})}});
+const b64d = b => new TextDecoder().decode(Uint8Array.from(atob(b.replace(/\n/g, '')), c => c.charCodeAt(0)));
+const b64e = s => btoa(String.fromCharCode(...new TextEncoder().encode(s)));
+function toast(m) { const t = document.getElementById('toast'); t.textContent = m; t.classList.add('on'); setTimeout(() => t.classList.remove('on'), 2200); }
+function statusOf(p, i) { return p && i ? '계획·이행 발간' : p ? '계획 발간완료' : i ? '이행 발간완료' : '미발간'; }
+async function readPub() { const r = await gh(FILE + '?ref=' + D.branch + '&t=' + Date.now());
+  if (r.status === 404) return {data: {}, sha: null}; if (!r.ok) throw new Error(r.status);
+  const j = await r.json(); return {data: JSON.parse(b64d(j.content) || '{}'), sha: j.sha}; }
+function applyPub(data) { for (const r of D.rows) { const v = data[r.id]; if (v) { r.pubPlan = !!v.plan; r.pubImpl = !!v.impl; r.pub = statusOf(r.pubPlan, r.pubImpl); } } }
+async function savePub(id, field, val) {
+  for (let k = 0; k < 3; k++) {
+    const {data, sha} = await readPub();
+    const cur = data[id] || {plan: false, impl: false};
+    cur[field] = val; cur.by = WHO; cur.at = new Date().toLocaleString('sv-SE').slice(0, 19);
+    data[id] = cur;
+    const r = await gh(FILE, {method: 'PUT', body: JSON.stringify({message: `발간 체크: ${id} ${field}=${val} (${WHO || '-'})`,
+      content: b64e(JSON.stringify(data, null, 1)), branch: D.branch, ...(sha ? {sha} : {})})});
+    if (r.ok) { applyPub(data); return true; }
+    if (r.status !== 409 && r.status !== 422) throw new Error(r.status);
+  }
+  throw new Error('충돌');
+}
+async function connect() {
+  if (T) { if (confirm('체크 권한 연결을 해제할까요?')) { LSset('vu_token'); T = null; render(); } return; }
+  const t = prompt('GitHub 토큰을 붙여넣으세요 (Fine-grained token, 이 저장소 Contents: Read and write)'); if (!t) return;
+  const repo = D.repo || prompt('저장소 이름 (예: 아이디/valueup-alert)'); if (!repo) return;
+  const who = prompt('이름 (체크 기록용)', WHO) || '';
+  T = t.trim(); REPO = repo.trim(); WHO = who.trim();
+  try { await readPub(); } catch (e) { alert('연결 실패 (' + e.message + '). 토큰 권한과 저장소 이름을 확인하세요.'); T = null; return; }
+  LSset('vu_token', T); LSset('vu_repo', REPO); LSset('vu_who', WHO); toast('연결됐어요. 이제 체크할 수 있어요'); await refreshPub();
+}
+async function refreshData() {  // 내려받은 파일이 오래돼도 저장소의 최신 데이터로 갱신
+  const r = await gh('docs/data.json?ref=' + D.branch + '&t=' + Date.now(), {headers: {'Accept': 'application/vnd.github.raw+json'}});
+  if (r.ok) { const nd = await r.json(); if ((nd.lastUpdate || '') >= (D.lastUpdate || '')) D = nd; } }
+async function refreshPub() { if (!T) return; try { await refreshData(); applyPub((await readPub()).data); render(); } catch (e) { toast('최신 발간 상태를 못 불러왔어요 (' + e.message + ')'); } }
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function base() { const s = since(S.period);
   return D.rows.filter(r => r.dt >= s && (!S.target || r.target !== false)
@@ -77,6 +125,8 @@ function base() { const s = since(S.period);
 function view() { const b = base();
   return S.analyst === '__none__' ? b.filter(r => !r.analysts.length) : S.analyst ? b.filter(r => r.analysts.includes(S.analyst)) : b; }
 function render() {
+  document.getElementById('auth').textContent = T ? '✓ 체크 권한 연결됨' + (WHO ? ' · ' + WHO : '') : '🔑 체크 권한 연결';
+  const ce = document.getElementById('caperr'); ce.hidden = !D.capError; ce.textContent = '⚠ ' + D.capError;
   document.getElementById('upd').textContent = D.lastUpdate ? '마지막 업데이트 ' + D.lastUpdate.slice(5, 16).replace('-', '/') : '';
   const t = D.rows.filter(r => r.dt === D.today);
   document.getElementById('kpi').innerHTML = `<small>오늘 신규 공시 · ${D.today.slice(4,6)}/${D.today.slice(6)}(${W[td.getDay()]})</small><b>${t.length}건</b>
@@ -91,7 +141,7 @@ function render() {
     + chip('__none__', '커버리지 외', b.filter(r => !r.analysts.length).length);
   const rows = view(); let day = ''; let h = '';
   for (const r of rows) {
-    if (S.period !== 'today' && r.dt !== day) { day = r.dt; h += `<tr class="day"><td colspan="8">${+r.dt.slice(4,6)}월 ${+r.dt.slice(6)}일</td></tr>`; }
+    if (S.period !== 'today' && r.dt !== day) { day = r.dt; h += `<tr class="day"><td colspan="9">${+r.dt.slice(4,6)}월 ${+r.dt.slice(6)}일</td></tr>`; }
     const out = r.target === false;
     h += `<tr class="${out ? 'out' : ''}"><td class="muted">${r.time}</td>
       <td class="co"><a href="${esc(r.url)}" target="_blank">${esc(r.name)}</a><small>${esc(r.code)} · ${esc(r.market)}</small></td>
@@ -100,11 +150,19 @@ function render() {
       <td class="num hide-m">${r.close ? r.close.toLocaleString() : '-'}</td>
       <td class="key hide-m">${esc(r.key)}</td>
       <td style="font-size:12.5px">${r.analysts.length ? esc(r.analysts.join(', ')) : '—'}</td>
-      <td>${out ? '<span class="muted" style="font-size:12px">작성 대상 아님</span>' : `<span class="pill ${r.pub === '미발간' ? 'pub-no' : 'pub-yes'}">${r.pub}</span>`}</td></tr>`;
+      <td>${out ? '<span class="muted" style="font-size:12px">작성 대상 아님</span>' :
+        `<label class="ck ${r.type === '이행' ? 'dim' : ''}"><input type="checkbox" data-id="${r.id}" data-f="plan" ${r.pubPlan ? 'checked' : ''} ${T ? '' : 'disabled title="체크 권한 연결 필요"'}>계획 발간</label>`
+      + `<label class="ck ${['계획','재공시'].includes(r.type) ? 'dim' : ''}"><input type="checkbox" data-id="${r.id}" data-f="impl" ${r.pubImpl ? 'checked' : ''} ${T ? '' : 'disabled title="체크 권한 연결 필요"'}>이행 발간</label>`}</td>
+      <td>${out ? '' : `<span class="pill ${r.pub === '미발간' ? 'pub-no' : 'pub-yes'}">${r.pub}</span>`}</td></tr>`;
   }
-  document.getElementById('tb').innerHTML = h || `<tr><td colspan="8" class="muted" style="text-align:center;padding:40px">${P[S.period]} 조건에 맞는 공시가 없습니다.</td></tr>`;
+  document.getElementById('tb').innerHTML = h || `<tr><td colspan="9" class="muted" style="text-align:center;padding:40px">${P[S.period]} 조건에 맞는 공시가 없습니다.</td></tr>`;
 }
+document.addEventListener('change', async e => { const cb = e.target; if (!cb.dataset || !cb.dataset.f) return;
+  cb.disabled = true;
+  try { await savePub(cb.dataset.id, cb.dataset.f, cb.checked); toast('저장됐어요'); render(); }
+  catch (err) { cb.checked = !cb.checked; cb.disabled = false; alert('저장 실패: ' + err.message); } });
 document.addEventListener('click', e => { const el = e.target.closest('button'); if (!el) return;
+  if (el.id === 'auth') { connect(); return; }
   if (el.id === 'tog') S.target = !S.target; else if (el.dataset.p) S.period = el.dataset.p;
   else if (el.dataset.t !== undefined) S.type = el.dataset.t; else if (el.dataset.a !== undefined) S.analyst = el.dataset.a;
   else if (el.id === 'xls') { const ws = XLSX.utils.json_to_sheet(view().map(r => ({'종목명': r.name,
@@ -112,6 +170,6 @@ document.addEventListener('click', e => { const el = e.target.closest('button');
     ws['!cols'] = [{wch: 18}, {wch: 16}, {wch: 18}, {wch: 16}]; const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '밸류업 현황');
     XLSX.writeFile(wb, `밸류업_현황_${P[S.period]}_${D.today}.xlsx`); return; }
   render(); });
-render();
+render(); refreshPub();
 </script>
 </body></html>

@@ -122,8 +122,13 @@ def parse_fchart(xml: str) -> dict[str, int]:
 
 
 def fetch_closes(code: str, basis: date) -> tuple[dict[str, int], int | None]:
+    """KIS 우선, 실패하면 네이버 일봉으로 대체"""
     if kis_enabled():
-        return kis_daily(code, basis - timedelta(days=14), basis)
+        try:
+            return kis_daily(code, basis - timedelta(days=14), basis)
+        except Exception as e:  # noqa: BLE001
+            LAST_ERROR["kis"] = f"KIS 실패: {str(e)[:200]}"
+            log.warning("KIS 조회 실패 %s → 네이버로 대체: %s", code, e)
     r = requests.get("https://fchart.stock.naver.com/sise.nhn",
                      params={"symbol": code, "timeframe": "day", "count": 400, "requestType": 0},
                      headers=config.HTTP_HEADERS, timeout=15)
@@ -131,6 +136,7 @@ def fetch_closes(code: str, basis: date) -> tuple[dict[str, int], int | None]:
     return parse_fchart(r.content.decode("euc-kr", errors="replace")), None
 
 
+LAST_ERROR: dict = {}
 _live: dict = {}  # 장 마감 직후(확정 전) 값 임시 보관 {(code, basis): (close, dt, ts)}
 
 
@@ -150,6 +156,8 @@ def get_close(code: str, basis: date, offline=False) -> tuple[int | None, str | 
         closes, shares = fetch_closes(code, basis)
     except Exception as e:  # noqa: BLE001
         log.warning("종가 조회 실패 %s: %s", code, e)
+        LAST_ERROR["price"] = (LAST_ERROR.get("kis", "") + " / " if LAST_ERROR.get("kis") else "") + \
+            f"네이버 종가 조회 실패: {str(e)[:150]}"
         return None, None
     if shares:
         with db.conn() as c:
@@ -209,9 +217,9 @@ def get_shares(stock_code: str, corp_code: str | None, offline=False) -> tuple[i
             or c.execute("SELECT shares, basis, fetched FROM shares WHERE corp_code=?", (corp_code or "",)).fetchone()
     if r and (offline or r["fetched"] >= (datetime.now() - timedelta(days=20)).strftime("%Y-%m-%d")):
         return r["shares"], r["basis"]
-    if offline or kis_enabled():
+    if offline:
         return (r["shares"], r["basis"]) if r else (None, None)
-    n, basis = fetch_shares(corp_code)
+    n, basis = fetch_shares(corp_code)   # KIS 주식수가 없을 때 DART로 보완
     if n:
         with db.conn() as c:
             c.execute("INSERT OR REPLACE INTO shares(corp_code, shares, basis, fetched) VALUES(?,?,?,?)",

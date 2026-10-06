@@ -56,7 +56,7 @@ def main():
     if args.action:
         from datetime import datetime
         slot = f"{datetime.now():%Y-%m-%d} {args.slot}" if args.slot else None
-        print(w.run_once_action(force_slot=slot))
+        print(w.run_once_action(force_slot=slot, backfill_days=args.backfill))
         return
     if args.check:
         import json
