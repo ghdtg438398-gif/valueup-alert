@@ -3,6 +3,7 @@ name: 밸류업 공시 알림
 on:
   schedule:
     # 영업일 09:00 / 15:35 KST (= 00:00 / 06:35 UTC). 공휴일은 프로그램이 알아서 건너뜀
+    # GitHub 예약 실행은 몇 분~수십 분 늦게 시작될 수 있음 (3시간 안이면 해당 회차로 발송)
     - cron: "0 0 * * 1-5"
     - cron: "35 6 * * 1-5"
   workflow_dispatch:
@@ -11,11 +12,13 @@ on:
         description: "강제 발송 회차 (비우면 수집·대시보드만 갱신). 예: 09:00 또는 15:30"
         required: false
         default: ""
+      backfill:
+        description: "과거 공시 불러오기 (일 수, 예: 365). 알림 없이 적재만. 비우면 안 함"
+        required: false
+        default: ""
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 concurrency:
   group: valueup
@@ -24,9 +27,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    environment:
-      name: github-pages
+    timeout-minutes: 120
     env:
       TZ: Asia/Seoul
       DART_API_KEY: ${{ secrets.DART_API_KEY }}
@@ -46,16 +47,16 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - name: 수집·판별·알림·대시보드 생성
-        run: python run.py --action ${{ github.event.inputs.slot && format('--slot {0}', github.event.inputs.slot) || '' }}
+        run: >-
+          python run.py --action
+          ${{ github.event.inputs.slot && format('--slot {0}', github.event.inputs.slot) || '' }}
+          ${{ github.event.inputs.backfill && format('--backfill {0}', github.event.inputs.backfill) || '' }}
       - name: 상태(DB) 저장
         run: |
           git config user.name "valueup-bot"
           git config user.email "valueup-bot@users.noreply.github.com"
-          git add -f data/valueup.db docs
+          git add -f data/valueup.db data/pub_status.json docs 2>/dev/null || git add -f data/valueup.db docs
           git commit -m "update $(date '+%Y-%m-%d %H:%M')" || echo "변경 없음"
+          # 실행 중 사이트에서 발간 체크가 저장됐으면 그 값을 우선
+          git pull --rebase -X ours origin ${{ github.ref_name }}
           git push
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: docs
-      - uses: actions/deploy-pages@v4
-        continue-on-error: true   # Pages 미설정 시에도 알림은 정상 동작
