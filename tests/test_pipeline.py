@@ -210,7 +210,7 @@ def test_end_to_end_digest(env):
     assert sent == []
     w.maybe_digest(datetime(2026, 10, 2, 9, 3))
     g = db.get_filing("20260930000281")
-    assert g["ann_close"] == 12340 and g["ann_dt"] == "20260930" and g["ann_final"] == 1   # 공시일(9/30) 종가
+    assert g["ann_close"] == 12340 and g["ann_dt"] == "20260930" and g["ann_final"] == 0   # 키 없음 → 추정
     assert g["ann_cap"] == 12340 * 18_745_338 and g["target"] is True
     text = "\n".join(m[1] for m in sent)
     assert "10/02(금) 09:00" in text and "작성 대상 <b>1건</b>" in text
@@ -424,3 +424,21 @@ def test_team_classification(env):
     db.set_meta("teams", json.dumps({}))
     assert "미분류" in digest.build(f)[0]                    # 산업구분 시트에 없음
     assert teamcfg.visible_unassigned("999999", {}) is True
+
+
+def test_announce_cap_sources(env, monkeypatch):
+    from app import config, market
+    w, db, sent = env
+    monkeypatch.setattr(config, "KIS_APP_KEY", "k"); monkeypatch.setattr(config, "KIS_APP_SECRET", "s")
+    monkeypatch.setattr(config, "KRX_API_KEY", "x")
+    monkeypatch.setattr(market, "kis_now", lambda code: (9940, 18709437, 1860 * 10**8))
+    # 공시 당일 장 마감 후 → 한투 시가총액 그대로, 확정
+    q = market.announce_cap("388050", None, date(2026, 9, 30), datetime(2026, 9, 30, 15, 40))
+    assert q["mktcap"] == 1860 * 10**8 and q["src"] == "한투" and q["final"]
+    # 당일 장중 → 잠정
+    q = market.announce_cap("388050", None, date(2026, 9, 30), datetime(2026, 9, 30, 11, 0))
+    assert q["src"] == "한투(장중)" and not q["final"]
+    # 지난 날짜 → 거래소 공식값 (그 날 종가·상장주식수·시총)
+    monkeypatch.setattr(market, "krx_day", lambda d: {"003030": (117600, 4871 * 10**8, 4141657)})
+    q = market.announce_cap("003030", None, date(2026, 9, 30), datetime(2026, 10, 6, 9, 0))
+    assert (q["close"], q["mktcap"], q["shares"], q["src"], q["final"]) == (117600, 4871 * 10**8, 4141657, "KRX", True)

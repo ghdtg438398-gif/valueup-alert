@@ -46,6 +46,8 @@ PENDING_REMIND = _getenv("PENDING_REMIND", "true").lower() == "true"  # 리포�
 KIS_APP_KEY = _getenv("KIS_APP_KEY", "")
 KIS_APP_SECRET = _getenv("KIS_APP_SECRET", "")
 KIS_BASE_URL = _getenv("KIS_BASE_URL", "https://openapi.koreainvestment.com:9443")
+# 한국거래소 Open API (openapi.krx.co.kr) — 공시일 종가·상장주식수·시가총액 공식값
+KRX_API_KEY = _getenv("KRX_API_KEY", "")
 # 작성 대상: 발표일 시총 범위 (억원)
 CAP_MIN_EOK = float(_getenv("CAP_MIN_EOK", "300"))
 CAP_MAX_EOK = float(_getenv("CAP_MAX_EOK", "5000"))

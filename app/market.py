@@ -229,6 +229,95 @@ def get_shares(stock_code: str, corp_code: str | None, offline=False) -> tuple[i
 
 
 # ----------------------------------------------------------------------
+# 한국거래소 Open API: 일별매매정보 (그 날 종가·상장주식수·시가총액 공식값)
+# ----------------------------------------------------------------------
+KRX_URLS = ["https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd",   # 유가증권
+            "https://data-dbg.krx.co.kr/svc/apis/sto/ksq_bydd_trd",   # 코스닥
+            "https://data-dbg.krx.co.kr/svc/apis/sto/knx_bydd_trd"]   # 코넥스
+
+
+def krx_enabled() -> bool:
+    return bool(config.KRX_API_KEY)
+
+
+def krx_day(basis: date) -> dict:
+    """{종목코드: (종가, 시가총액, 상장주식수)} — 날짜별 1회 받아 DB에 저장"""
+    key = basis.strftime("%Y%m%d")
+    with db.conn() as c:
+        rows = c.execute("SELECT code, close, mktcap, shares FROM krx_daily WHERE basis=?", (key,)).fetchall()
+    if rows:
+        return {r["code"]: (r["close"], r["mktcap"], r["shares"]) for r in rows}
+    out = {}
+    for url in KRX_URLS:
+        try:
+            r = requests.get(url, params={"basDd": key}, headers={"AUTH_KEY": config.KRX_API_KEY}, timeout=30)
+            r.raise_for_status()
+            for it in r.json().get("OutBlock_1") or []:
+                code = (it.get("ISU_CD") or it.get("ISU_SRT_CD") or "").strip()
+                code = code[-6:] if len(code) >= 6 else code
+                close, cap, sh = _to_int(it.get("TDD_CLSPRC")), _to_int(it.get("MKTCAP")), _to_int(it.get("LIST_SHRS"))
+                if code and close:
+                    out[code] = (close, cap or close * sh, sh)
+        except Exception as e:  # noqa: BLE001
+            LAST_ERROR["krx"] = f"KRX 조회 실패({url.rsplit('/', 1)[-1]} {key}): {str(e)[:150]}"
+            log.warning("KRX 일별매매정보 실패 %s %s: %s", url, key, e)
+    if out and len(out) > 1500:   # 유가+코스닥이 다 들어왔을 때만 저장 (데이터 미공개일·부분 실패 방지)
+        with db.conn() as c:
+            c.executemany("INSERT OR REPLACE INTO krx_daily VALUES(?,?,?,?,?)",
+                          [(key, k, v[0], v[1], v[2]) for k, v in out.items()])
+    return out
+
+
+def kis_now(code: str) -> tuple[int | None, int | None, int | None]:
+    """한투 주식현재가 시세 → (현재가, 상장주식수, 시가총액[원]). 장 마감 뒤 = 당일 종가 기준"""
+    r = requests.get(
+        f"{config.KIS_BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-price",
+        headers={"content-type": "application/json; charset=utf-8", "authorization": f"Bearer {kis_token()}",
+                 "appkey": config.KIS_APP_KEY, "appsecret": config.KIS_APP_SECRET,
+                 "tr_id": "FHKST01010100", "custtype": "P"},
+        params={"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code}, timeout=15)
+    r.raise_for_status()
+    js = r.json()
+    if js.get("rt_cd") not in (None, "0"):
+        raise RuntimeError(f"KIS {js.get('msg_cd')}: {js.get('msg1')}")
+    o = js.get("output") or {}
+    avls = _to_int(o.get("hts_avls"))          # HTS 시가총액 (억원)
+    return _to_int(o.get("stck_prpr")) or None, _to_int(o.get("lstn_stcn")) or None, (avls * 10**8 if avls else None)
+
+
+def announce_cap(stock_code: str, corp_code: str | None, basis: date, now: datetime | None = None) -> dict:
+    """발표일 시총
+    1) 공시 당일 → 한투 '시가총액'(hts_avls) 그대로. 장 마감(15:30) 뒤 조회면 확정, 장중이면 잠정
+    2) 지난 날짜 → 한국거래소 공식 일별매매정보의 시가총액 (KRX_API_KEY) → 확정
+    3) 둘 다 안 되면 → 종가 × 현재 상장주식수 → 추정 (다음 실행에 다시 시도)"""
+    now = now or datetime.now()
+    out = {"close": None, "close_dt": None, "mktcap": None, "shares": None, "src": None, "final": False}
+    if not stock_code:
+        return out
+    if basis == now.date() and kis_enabled():
+        try:
+            px, sh, cap = kis_now(stock_code)
+            if px and (cap or sh):
+                closed = now.time() >= time(15, 35)
+                out.update(close=px, mktcap=cap or px * sh, shares=sh, close_dt=basis.strftime("%Y%m%d"),
+                           src="한투" if closed else "한투(장중)", final=closed)
+                return out
+        except Exception as e:  # noqa: BLE001
+            LAST_ERROR["kis"] = f"한투 시세 조회 실패: {str(e)[:150]}"
+    if krx_enabled() and basis < now.date():
+        hit = krx_day(basis).get(stock_code)
+        if hit:
+            out.update(close=hit[0], mktcap=hit[1], shares=hit[2], close_dt=basis.strftime("%Y%m%d"),
+                       src="KRX", final=True)
+            return out
+    q = cap_on(stock_code, corp_code, basis)
+    if q["close"]:
+        sh, _ = get_shares(stock_code, corp_code, offline=True)
+        out.update(close=q["close"], close_dt=q["close_dt"], mktcap=q["mktcap"], shares=sh,
+                   src="추정(현재 주식수)", final=False)
+    return out
+
+
 def cap_on(stock_code: str, corp_code: str | None, basis: date, offline=False) -> dict:
     """basis 일 종가·시총"""
     out = {"close": None, "close_dt": None, "mktcap": None, "shares_basis": None}

@@ -53,6 +53,8 @@ CREATE TABLE IF NOT EXISTS analysts (
     telegram_username TEXT
 );
 CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
+CREATE TABLE IF NOT EXISTS krx_daily (basis TEXT, code TEXT, close INTEGER, mktcap INTEGER, shares INTEGER,
+                                      PRIMARY KEY (basis, code));
 CREATE TABLE IF NOT EXISTS prices (code TEXT, basis TEXT, close INTEGER, dt TEXT, PRIMARY KEY (code, basis));
 CREATE TABLE IF NOT EXISTS shares (corp_code TEXT PRIMARY KEY, shares INTEGER, basis TEXT, fetched TEXT);
 CREATE TABLE IF NOT EXISTS digests (slot TEXT PRIMARY KEY, sent_at TEXT, n INTEGER);
@@ -76,7 +78,8 @@ def conn():
 
 
 MIGRATIONS = {"superseded_by": "TEXT",   # 정정공시로 대체된 원본이면 정정공시 접수번호
-              "orig_disclosed_at": "TEXT",   # 정정공시면 최초 공시 시각 (발표일 시총 기준)
+              "orig_disclosed_at": "TEXT",
+              "ann_shares": "INTEGER", "ann_src": "TEXT",   # 발표일 상장주식수, 시총 출처   # 정정공시면 최초 공시 시각 (발표일 시총 기준)
               "kind_type": "TEXT", "related": "TEXT DEFAULT '[]'", "digest_at": "TEXT",
               # 발표일 시총
               "ann_close": "INTEGER", "ann_cap": "INTEGER", "ann_dt": "TEXT", "ann_final": "INTEGER DEFAULT 0",
@@ -91,6 +94,10 @@ def init():
         for col, typ in MIGRATIONS.items():
             if col not in cols:
                 c.execute(f"ALTER TABLE filings ADD COLUMN {col} {typ}")
+        # 예전 방식(종가×현재 주식수)으로 확정된 시총은 새 방식으로 다시 계산
+        if not c.execute("SELECT 1 FROM meta WHERE k='cap_v2'").fetchone():
+            c.execute("UPDATE filings SET ann_final=0 WHERE ann_src IS NULL")
+            c.execute("INSERT OR REPLACE INTO meta VALUES('cap_v2','1')")
 
 
 # ---------- meta ----------

@@ -239,18 +239,20 @@ class Worker:
         market.LAST_ERROR.clear()
         for f in db.caps_pending(limit=3000):
             basis = market.announce_basis(f.get("orig_disclosed_at") or f.get("disclosed_at"), f["rcept_dt"])
-            q = market.cap_on(f["stock_code"], f.get("corp_code"), basis)
+            q = market.announce_cap(f["stock_code"], f.get("corp_code"), basis, now)
             if q["close"]:
                 db.update_filing(f["acptno"], ann_close=q["close"], ann_cap=q["mktcap"], ann_dt=q["close_dt"],
-                                 ann_final=int(bool(q["mktcap"]) and market.is_final(basis, now)))
+                                 ann_shares=q["shares"], ann_src=q["src"],
+                                 # 한투 당일 시총(장 마감 후) 또는 거래소 공식값일 때만 확정, 나머지는 다음 실행에 다시 시도
+                                 ann_final=int(q["final"]))
             if q["mktcap"]:
                 ok += 1
             else:
                 fail += 1
-        err = market.LAST_ERROR.get("price") or ("" if not fail else "상장주식수 조회 실패")
+        err = market.LAST_ERROR.get("krx") or market.LAST_ERROR.get("price") or ("" if not fail else "상장주식수 조회 실패")
         db.set_meta("cap_error", f"시총 미계산 {fail}건 · {err}" if fail else "")
-        log.info("발표일 시총 계산: 성공 %d / 실패 %d %s (KIS 키 %s)", ok, fail, err,
-                 "있음" if market.kis_enabled() else "없음 → 네이버·DART 사용")
+        log.info("발표일 시총 계산: 성공 %d / 실패 %d %s (거래소 키 %s, 한투 키 %s)", ok, fail, err,
+                 "있음" if market.krx_enabled() else "없음", "있음" if market.kis_enabled() else "없음")
         return ok, fail
 
     def maybe_digest(self, now=None):

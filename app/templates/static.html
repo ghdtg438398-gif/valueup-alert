@@ -232,7 +232,7 @@ function render() {
     h += `<tr class="${out ? 'out' : ''}"><td class="muted">${r.time}</td>
       <td class="co"><a href="${esc(r.url)}" target="_blank">${esc(r.name)}</a><small>${esc(r.code)} · ${esc(r.market)}</small></td>
       <td><span class="pill t-${esc(r.type)}">${esc(r.type)}</span>${r.corr ? ' <span class="pill st-todo" title="정정공시 — 정정 전 공시는 목록에서 대체됨">정정</span>' : ''}${r.unverified ? ' <span class="muted" title="KIND 접속 불가로 첨부 미확인">⚠</span>' : ''}</td>
-      <td class="num cap">${r.cap ? `<b>${r.capTxt}</b><small>${out ? '대상 외' : r.capDt + ' 종가' + (r.final ? '' : ' · 잠정')}</small>` : '<span class="muted">확인 중</span>'}</td>
+      <td class="num cap">${r.cap ? `<b>${r.capTxt}</b><small title="${esc(r.capSrc)} · 상장주식수 ${r.shares ? r.shares.toLocaleString() + '주' : '-'}">${out ? '대상 외' : r.capDt + ' 종가' + (r.final ? '' : ' · ' + (r.capSrc.startsWith('한투') ? '잠정' : '추정'))}</small>` : '<span class="muted">확인 중</span>'}</td>
       <td class="num hide-m">${r.close ? r.close.toLocaleString() : '-'}</td>
       <td class="key hide-m">${esc(r.key)}</td>
       <td class="asg">${assignCell(r)}</td>
