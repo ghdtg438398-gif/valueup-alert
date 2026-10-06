@@ -92,7 +92,8 @@ def build(filings: list[dict], now: datetime | None = None, only_analyst: str | 
         t = f.get("kind_type") or "계획"
         cap = market.fmt_cap(f.get("ann_cap")) if f.get("ann_cap") else "확인 중"
         prov = "" if f.get("ann_final") or not f.get("ann_cap") else " (잠정)"
-        who = ", ".join(ans) if ans else "커버리지 외"
+        from . import teamcfg
+        who = ", ".join(ans) if ans else ("커버리지 외(1팀)" if teamcfg.teams().get(f.get("stock_code") or "") else "미분류")
         b = [f"\n<b>{i}) {e(f['corp_name'])}</b> · 👤 {e(who)}",
              f"   {TYPE_ICON.get(t, '')} {e(t)} · 발표일 시총 <b>{cap}</b>{prov}"]
         kl = key_line(f)

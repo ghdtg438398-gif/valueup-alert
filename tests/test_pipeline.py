@@ -224,7 +224,7 @@ def test_end_to_end_digest(env):
     w.check("20260930000835")
     w.maybe_digest(datetime(2026, 10, 2, 15, 36))
     text2 = "\n".join(m[1] for m in sent[n:])
-    assert "세아제강지주" in text2 and "🟩 이행" in text2 and "커버리지 외" in text2 and "지투파워" not in text2
+    assert "세아제강지주" in text2 and "🟩 이행" in text2 and "미분류" in text2 and "지투파워" not in text2
     # 작성 대상 범위 밖이면 알림에서 빠짐
     config.CAP_MAX_EOK = 1000
     try:
@@ -407,3 +407,20 @@ def test_reject_status(env, tmp_path, monkeypatch):
     pubsync.set_pub("388050", "plan", True)
     pubsync.set_pub("388050", "reject", True)
     assert pubsync.company_status("388050") == "발간 거절"
+
+
+def test_team_classification(env):
+    import json
+    from app import digest, teamcfg
+    w, db, sent = env
+    w.kind.s.routes["acptno=20260930000835"] = fx("viewer.html")
+    w.poll_kind(days=1)
+    w.compute_caps()
+    f = [db.get_filing("20260930000835")]
+    db.set_meta("teams", json.dumps({"003030": "리서치1팀"}))
+    assert "커버리지 외(1팀)" in digest.build(f)[0]
+    db.set_meta("teams", json.dumps({"003030": "리서치2팀"}))
+    assert "세아제강지주" not in digest.build(f)[0]          # 다른 팀 종목은 제외
+    db.set_meta("teams", json.dumps({}))
+    assert "미분류" in digest.build(f)[0]                    # 산업구분 시트에 없음
+    assert teamcfg.visible_unassigned("999999", {}) is True

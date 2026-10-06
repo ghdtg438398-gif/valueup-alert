@@ -43,7 +43,7 @@ def status_xlsx(days=365) -> bytes:
     cols = ["공시일", "종목명", "발표일 시총(억원)", "담당", "발간 상태", "계획 발간일", "계획 발간인", "이행 발간일", "이행 발간인"]
     df = pd.DataFrame([{"공시일": f"{r['dt'][:4]}.{r['dt'][4:6]}.{r['dt'][6:]}", "종목명": r["name"],
                         "발표일 시총(억원)": round(r["cap"] / 1e8) if r["cap"] else None,
-                        "담당": ", ".join(r["analysts"]) or "커버리지 외", "발간 상태": r["pub"],
+                        "담당": ", ".join(r["analysts"]) or ("커버리지 외(1팀)" if r["team"] else "미분류"), "발간 상태": r["pub"],
                         "계획 발간일": pub.get(r["code"], {}).get("plan_date", ""), "계획 발간인": pub.get(r["code"], {}).get("plan_by", ""),
                         "이행 발간일": pub.get(r["code"], {}).get("impl_date", ""), "이행 발간인": pub.get(r["code"], {}).get("impl_by", "")}
                        for r in rows], columns=cols)

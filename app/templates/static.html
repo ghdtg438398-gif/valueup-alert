@@ -50,7 +50,8 @@ tr.out td{color:var(--muted)}tr.out .pill{opacity:.5}
 .st-no{background:var(--accent-soft);color:var(--accent)}.st-wait{background:var(--info-soft);color:var(--info)}
 .st-todo{background:#fdf3d7;color:#9a6700}.st-done{background:var(--ok-soft);color:var(--ok)}
 .st-rej{background:var(--line);color:var(--muted)}.ck.rej{color:var(--muted)}.ck.rej input{accent-color:#6b6f78}
-.asg{font-size:12.5px;position:relative;white-space:nowrap}.asg small{color:var(--muted)}
+.asg{font-size:12.5px;position:relative;white-space:nowrap}
+.tm{font-size:11.5px;color:var(--muted)}.tm.unk{background:#fdf3d7;color:#9a6700;border-radius:99px;padding:1px 7px;font-weight:700}.asg small{color:var(--muted)}
 .asg select.as{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
 .asg:hover .who{text-decoration:underline dotted}
 .range{display:flex;align-items:center;gap:4px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:3px 6px}
@@ -185,7 +186,10 @@ function statusOf(code) { const p = STATE.pub[code] || {};
 function base() { const f = S.from || '00000000', t = S.to || '99999999';
   return D.rows.filter(r => r.dt >= f && r.dt <= t && (!S.target || r.target !== false)
     && (!S.type || (S.type === '이행' ? r.type.startsWith('이행') : r.type !== '이행'))); }
-function byAnalyst(b) { return S.analyst === '__none__' ? b.filter(r => !analystsOf(r).length) : S.analyst ? b.filter(r => analystsOf(r).includes(S.analyst)) : b; }
+const unk = r => !analystsOf(r).length && !r.team;            // 산업구분 시트에 없는 종목
+const outside = r => !analystsOf(r).length && !!r.team;       // 1팀 종목인데 담당 없음
+function byAnalyst(b) { return S.analyst === '__none__' ? b.filter(outside) : S.analyst === '__unk__' ? b.filter(unk)
+  : S.analyst ? b.filter(r => analystsOf(r).includes(S.analyst)) : b; }
 function view() { const b = byAnalyst(base());
   return (!S.analyst && S.status) ? b.filter(r => r.target !== false && statusOf(r.code) === S.status) : b; }
 function assignCell(r) {
@@ -193,7 +197,8 @@ function assignCell(r) {
   const opts = ['<option value="">엑셀 기준' + (r.baseAnalysts.length ? ' (' + esc(r.baseAnalysts.join(', ')) + ')' : '') + '</option>']
     .concat((D.assignees || D.analysts).map(a => `<option ${ov === a ? 'selected' : ''}>${esc(a)}</option>`))
     .concat([`<option value="-" ${ov === '-' ? 'selected' : ''}>커버리지 외</option>`]);
-  return `<span class="who">${cur.length ? esc(cur.join(', ')) : '—'}${ov ? ' <small title="직접 지정">✎</small>' : ''}</span>
+  const none = r.team ? '<span class="tm">커버리지 외 · 1팀</span>' : '<span class="tm unk" title="커버리지 엑셀 산업구분 시트에 없는 종목 (신규상장 등)">미분류</span>';
+  return `<span class="who">${cur.length ? esc(cur.join(', ')) : none}${ov ? ' <small title="직접 지정">✎</small>' : ''}</span>
     <select class="as" data-code="${esc(r.code)}" data-name="${esc(r.name)}" title="담당 바꾸기">${opts.join('')}</select>`;
 }
 function render() {
@@ -211,7 +216,7 @@ function render() {
   const b = base();
   const chip = (k, label, n) => `<button class="chip ${S.analyst === k ? 'on' : ''}" data-a="${esc(k)}">${esc(label)}<em>${n}</em></button>`;
   document.getElementById('chips').innerHTML = chip('', '전체', b.length) + D.analysts.map(a => chip(a, a, b.filter(r => analystsOf(r).includes(a)).length)).join('')
-    + chip('__none__', '커버리지 외', b.filter(r => !analystsOf(r).length).length);
+    + chip('__none__', '커버리지 외 (1팀)', b.filter(outside).length) + chip('__unk__', '미분류', b.filter(unk).length);
   // 발간 상태별 칸 (전체 탭에서만)
   const sb = document.getElementById('stbar');
   if (S.analyst) { sb.hidden = true; } else {
@@ -280,7 +285,7 @@ document.addEventListener('click', e => { const el = e.target.closest('button');
   else if (el.dataset.a !== undefined) { S.analyst = el.dataset.a; if (S.analyst) S.status = ''; }
   else if (el.id === 'xls') { const ws = XLSX.utils.json_to_sheet(view().map(r => { const p = STATE.pub[r.code] || {}; return {
       '공시일': dots(r.dt), '종목명': r.name, '공시 구분': r.type,
-      '발표일 시총(억원)': r.cap ? Math.round(r.cap / 1e8) : null, '담당': analystsOf(r).join(', ') || '커버리지 외',
+      '발표일 시총(억원)': r.cap ? Math.round(r.cap / 1e8) : null, '담당': analystsOf(r).join(', ') || (r.team ? '커버리지 외(1팀)' : '미분류'),
       '발간 상태': r.target === false ? '작성 대상 아님' : statusOf(r.code),
       '계획 발간일': p.plan ? (p.plan_date || '') : '', '계획 발간인': p.plan ? (p.plan_by || '') : '',
       '이행 발간일': p.impl ? (p.impl_date || '') : '', '이행 발간인': p.impl ? (p.impl_by || '') : ''}; }));
