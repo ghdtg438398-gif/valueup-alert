@@ -84,15 +84,17 @@ class Worker:
         try:
             res = self._inspect(acptno, f)
         except Exception as e:  # noqa: BLE001
-            if not self.kind_ok and not f["valid"]:
+            confirmed_no_att = (not f["valid"]) and f["check_count"] > 0 and not f.get("last_error")
+            if not self.kind_ok and not f["valid"] and not confirmed_no_att:
+                # (이미 '첨부 없음'으로 확인된 공시는 접속이 막혀도 그대로 둠)
                 # KIND 자체가 막힌 환경: DART로 감지한 공시를 '첨부 미확인'으로 넘겨 알림은 가게 함
                 db.update_filing(acptno, valid=1, last_error=UNVERIFIED, last_checked=db.now(),
                                  kind_type=kind.classify(f["report_nm"]), check_count=f["check_count"] + 1)
                 log.warning("KIND·DART 모두 확인 불가 → 첨부 미확인으로 처리: %s", f["corp_name"])
                 return
             keep = f["valid"] and str(f.get("last_error") or "").startswith("첨부 미확인")
-            db.update_filing(acptno, last_error=UNVERIFIED if keep else str(e)[:500], last_checked=db.now(),
-                             check_count=f["check_count"] + 1)
+            err = None if confirmed_no_att else (UNVERIFIED if keep else str(e)[:500])   # 확인된 '첨부 없음'은 유지
+            db.update_filing(acptno, last_error=err, last_checked=db.now(), check_count=f["check_count"] + 1)
             log.warning("KIND 확인 실패 %s: %s", acptno, e)
             return
         body = res.get("body", {})
@@ -213,10 +215,10 @@ class Worker:
                 continue
             self.check(f["acptno"])
 
-    def recheck_unverified(self, days=60):
+    def recheck_unverified(self, days=None):
         """⚠ 첨부 미확인(KIND 막혔을 때 DART로만 들어온 공시) → KIND가 열리면 다시 확인
         첨부가 실제로 없으면 valid=0이 되어 목록에서 빠지고, 있으면 ⚠가 사라짐"""
-        since = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d")
+        since = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d") if days else "00000000"
         with db.conn() as c:
             ids = [r["acptno"] for r in c.execute(
                 "SELECT acptno FROM filings WHERE valid=1 AND last_error LIKE '첨부 미확인%' AND rcept_dt >= ?", (since,))]

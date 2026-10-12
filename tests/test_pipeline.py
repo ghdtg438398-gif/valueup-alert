@@ -527,3 +527,7 @@ def test_dart_fallback_when_kind_blocked(env):
                 "rcept_dt": "20260930", "source": "dart"})
     assert db.get_filing("20260930000777")["last_error"].startswith("첨부 미확인")
     assert dart.parse_att_options("<html></html>") is None
+    # 이미 '첨부 없음'으로 확인된 엠브레인은 KIND·DART 둘 다 막혀도 ⚠로 바뀌지 않음 (10/6 밤 사고 재발 방지)
+    w.check("20260930001024"); w.check("20260930001024")
+    f = db.get_filing("20260930001024")
+    assert f["valid"] == 0 and not str(f["last_error"] or "").startswith("첨부 미확인")
