@@ -44,6 +44,7 @@ tr.out td{color:var(--muted)}tr.out .pill{opacity:.5}
 .ck input{width:16px;height:16px;accent-color:var(--ok);margin:0;cursor:pointer}.ck.dim{opacity:.45}
 .ck input:disabled{cursor:not-allowed}
 .warn{margin:0 0 14px;padding:10px 14px;border-radius:8px;background:var(--accent-soft);color:var(--accent);font-size:13px}
+.stbar[hidden]{display:none}
 .stbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--bg)}
 .sbtn{border:1px solid var(--line);border-radius:8px;padding:4px 10px;font:600 12.5px Pretendard,sans-serif;background:var(--panel);color:var(--ink);cursor:pointer}
 .sbtn em{font-style:normal;margin-left:5px;opacity:.7}.sbtn.on{outline:2px solid var(--ink);outline-offset:-1px}
@@ -66,6 +67,10 @@ tr.out td{color:var(--muted)}tr.out .pill{opacity:.5}
 .modal .row{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--panel);padding:9px 16px;border-radius:8px;font-size:13px;opacity:0;transition:.2s;pointer-events:none}
 .toast.on{opacity:1}
+.xbtn{border:1px solid transparent;background:none;color:var(--muted);border-radius:6px;padding:3px 7px;font:600 12px Pretendard,sans-serif;cursor:pointer;white-space:nowrap}
+.xbtn:hover{border-color:var(--line);color:var(--accent)}.xbtn.rs{border-color:var(--line);color:var(--ok)}
+.chip.ex{border-style:dashed}.exinfo{color:var(--accent)!important}
+.uv{display:inline-block;font-size:11px;font-weight:700;color:#9a6700;background:#fdf3d7;border-radius:99px;padding:1px 7px;white-space:nowrap;cursor:help}
 @media (max-width:760px){.hide-m{display:none}.kpi{flex-basis:100%}.ctrl{margin-left:0}}
 </style></head>
 <body>
@@ -85,9 +90,9 @@ tr.out td{color:var(--muted)}tr.out .pill{opacity:.5}
       <div class="right"><div class="seg" id="types"></div><button class="btn" id="xls">⬇ 엑셀</button></div></div>
     <div class="stbar" id="stbar"></div>
     <div class="tw"><table>
-      <thead><tr><th>시각</th><th>종목</th><th>공시 구분</th><th class="num">발표일 시총</th><th class="num hide-m">종가</th><th class="hide-m">핵심</th><th>담당</th><th>발간 체크</th><th>상태</th></tr></thead>
+      <thead><tr><th>시각</th><th>종목</th><th>공시 구분</th><th class="num">발표일 시총</th><th class="num hide-m">종가</th><th class="hide-m">핵심</th><th>담당</th><th>발간 체크</th><th>상태</th><th></th></tr></thead>
       <tbody id="tb"></tbody></table></div>
-    <div class="note">발간 체크·담당(이름 클릭)은 종목 단위로 바로 저장되어 팀 전체에 공유됩니다 (처음 한 번 <b>수정 권한 연결</b> 필요) · 발표일 시총 = 공시일 종가 × 상장주식수 · PDF·한글·워드 첨부 확인된 공시만</div>
+    <div class="note">발간 체크·담당(이름 클릭)은 종목 단위로 바로 저장되어 팀 전체에 공유됩니다 (처음 한 번 <b>수정 권한 연결</b> 필요) · 발표일 시총 = 공시일 종가 × 상장주식수 · PDF·한글·워드 첨부 확인된 공시만 (⚠ 첨부 미확인 = 접속 문제로 아직 확인 못 함) · 이상한 공시는 맨 오른쪽 ✕로 제외, <b>제외됨</b>에서 복원</div>
   </div>
 </div></main><div class="toast" id="toast"></div>
 <div class="modal" id="pubmodal" hidden><div class="box">
@@ -118,7 +123,8 @@ const LSset = (k, v) => { try { v ? localStorage.setItem(k, v) : localStorage.re
 let T = LS('vu_token'); let REPO = LS('vu_repo') || D.repo; let WHO = LS('vu_who') || '';
 let STATE = norm(D.state);
 const FILE = 'data/pub_status.json';
-function norm(x) { x = x || {}; return {pub: x.pub || {}, assign: x.assign || {}}; }
+function norm(x) { x = x || {}; return {pub: x.pub || {}, assign: x.assign || {}, exclude: x.exclude || {}}; }
+const isEx = r => !!STATE.exclude[r.id];
 const gh = (path, opt = {}) => fetch(`https://api.github.com/repos/${REPO}/contents/${path}`, {...opt,
   headers: {'Authorization': 'Bearer ' + T, 'Accept': 'application/vnd.github+json', ...(opt.headers || {})}});
 const b64d = b => new TextDecoder().decode(Uint8Array.from(atob(b.replace(/\n/g, '')), c => c.charCodeAt(0)));
@@ -150,7 +156,12 @@ async function connect() {
   LSset('vu_token', T); LSset('vu_repo', REPO); LSset('vu_who', WHO); toast('연결됐어요. 이제 수정할 수 있어요'); await refresh(); return true;
 }
 async function refresh() {  // 내려받은 파일이 오래돼도 저장소의 최신 데이터·상태로 갱신
-  if (!T) return;
+  if (!T) {   // 토큰 없이: 공개 저장소면 최신 체크 상태를 바로 읽음 (비공개면 조용히 건너뜀)
+    if (!REPO) return;
+    try { const r = await fetch(`https://raw.githubusercontent.com/${REPO}/${D.branch}/data/pub_status.json?t=${Date.now()}`);
+      if (r.ok) { STATE = norm(await r.json()); render(); } } catch (e) {}
+    return;
+  }
   try {
     const r = await gh('docs/data.json?ref=' + D.branch + '&t=' + Date.now(), {headers: {'Accept': 'application/vnd.github.raw+json'}});
     if (r.ok) { const nd = await r.json(); if ((nd.lastUpdate || '') >= (D.lastUpdate || '')) D = nd; }
@@ -178,17 +189,19 @@ function askPub(name, f, code) {
 
 // ---- 종목 단위 판정 ----
 function analystsOf(r) { const a = STATE.assign[r.code]; if (a && a.analyst) return a.analyst === '-' ? [] : [a.analyst]; return r.baseAnalysts || r.analysts || []; }
-function implDisclosed(code) { return D.implCodes.includes(code) || D.rows.some(x => x.code === code && x.type.startsWith('이행')); }
+function implDisclosed(code) { return D.rows.some(x => x.code === code && x.type.startsWith('이행') && !isEx(x)); }
 function statusOf(code) { const p = STATE.pub[code] || {};
   if (p.reject) return '발간 거절';
   if (!p.plan) return '미발간'; if (p.impl) return '발간 완료'; return implDisclosed(code) ? '이행 미발간' : '이행 미공시'; }
 
-function base() { const f = S.from || '00000000', t = S.to || '99999999';
-  return D.rows.filter(r => r.dt >= f && r.dt <= t && (!S.target || r.target !== false)
+function inPeriod() { const f = S.from || '00000000', t = S.to || '99999999'; return D.rows.filter(r => r.dt >= f && r.dt <= t); }
+const exRows = () => inPeriod().filter(isEx);                   // 제외한 공시 (기간 안)
+function base() {
+  return inPeriod().filter(r => !isEx(r) && (!S.target || r.target !== false)
     && (!S.type || (S.type === '이행' ? r.type.startsWith('이행') : r.type !== '이행'))); }
 const unk = r => !analystsOf(r).length && !r.team;            // 산업구분 시트에 없는 종목
 const outside = r => !analystsOf(r).length && !!r.team;       // 1팀 종목인데 담당 없음
-function byAnalyst(b) { return S.analyst === '__none__' ? b.filter(outside) : S.analyst === '__unk__' ? b.filter(unk)
+function byAnalyst(b) { return S.analyst === '__excl__' ? exRows() : S.analyst === '__none__' ? b.filter(outside) : S.analyst === '__unk__' ? b.filter(unk)
   : S.analyst ? b.filter(r => analystsOf(r).includes(S.analyst)) : b; }
 function view() { const b = byAnalyst(base());
   return (!S.analyst && S.status) ? b.filter(r => r.target !== false && statusOf(r.code) === S.status) : b; }
@@ -204,8 +217,10 @@ function assignCell(r) {
 function render() {
   document.getElementById('auth').textContent = T ? '✓ 수정 권한 연결됨' + (WHO ? ' · ' + WHO : '') : '🔑 수정 권한 연결';
   const ce = document.getElementById('caperr'); ce.hidden = !D.capError; ce.textContent = '⚠ ' + D.capError;
-  document.getElementById('upd').textContent = D.lastUpdate ? '마지막 업데이트 ' + D.lastUpdate.slice(5, 16).replace('-', '/') : '';
-  const t = D.rows.filter(r => r.dt === D.today);
+  const md = x => x ? x.slice(5, 16).replace('-', '/') : '';
+  const lastEdit = Object.values(STATE.pub).concat(Object.values(STATE.assign), Object.values(STATE.exclude)).map(v => v.at || '').sort().pop() || D.stateUpdate;
+  document.getElementById('upd').textContent = (D.lastUpdate ? '공시 수집 ' + md(D.lastUpdate) : '') + (lastEdit ? ' · 체크 반영 ' + md(lastEdit) : '');
+  const t = D.rows.filter(r => r.dt === D.today && !isEx(r));
   document.getElementById('kpi').innerHTML = `<small>오늘 신규 공시 · ${D.today.slice(4,6)}/${D.today.slice(6)}(${W[td.getDay()]})</small><b>${t.length}건</b>
     <span>계획 ${t.filter(r => !r.type.startsWith('이행')).length} · 이행 ${t.filter(r => r.type.startsWith('이행')).length} · 작성 대상 ${t.filter(r => r.target !== false).length}건</span>`;
   document.getElementById('range').textContent = `발표일 시총 ${D.capMin.toLocaleString()}억~${D.capMax.toLocaleString()}억`;
@@ -216,7 +231,8 @@ function render() {
   const b = base();
   const chip = (k, label, n) => `<button class="chip ${S.analyst === k ? 'on' : ''}" data-a="${esc(k)}">${esc(label)}<em>${n}</em></button>`;
   document.getElementById('chips').innerHTML = chip('', '전체', b.length) + D.analysts.map(a => chip(a, a, b.filter(r => analystsOf(r).includes(a)).length)).join('')
-    + chip('__none__', '커버리지 외 (1팀)', b.filter(outside).length) + chip('__unk__', '미분류', b.filter(unk).length);
+    + chip('__none__', '커버리지 외 (1팀)', b.filter(outside).length) + chip('__unk__', '미분류', b.filter(unk).length)
+    + (exRows().length || S.analyst === '__excl__' ? `<button class="chip ex ${S.analyst === '__excl__' ? 'on' : ''}" data-a="__excl__" title="작성 대상에서 뺀 공시 — 여기서 복원">제외됨<em>${exRows().length}</em></button>` : '');
   // 발간 상태별 칸 (전체 탭에서만)
   const sb = document.getElementById('stbar');
   if (S.analyst) { sb.hidden = true; } else {
@@ -227,22 +243,25 @@ function render() {
   const rows = view(); let day = ''; let h = '';
   for (const r of rows) {
     if (S.period !== 'today' && r.dt !== day) { day = r.dt; const dd = new Date(+r.dt.slice(0,4), +r.dt.slice(4,6) - 1, +r.dt.slice(6));
-      h += `<tr class="day"><td colspan="9">${dots(r.dt)} (${W[dd.getDay()]})</td></tr>`; }
-    const out = r.target === false; const p = STATE.pub[r.code] || {}; const st = statusOf(r.code);
+      h += `<tr class="day"><td colspan="10">${dots(r.dt)} (${W[dd.getDay()]})</td></tr>`; }
+    const ex = isEx(r); const out = r.target === false || ex; const p = STATE.pub[r.code] || {}; const st = statusOf(r.code);
+    const xi = STATE.exclude[r.id] || {};
     h += `<tr class="${out ? 'out' : ''}"><td class="muted">${r.time}</td>
-      <td class="co"><a href="${esc(r.url)}" target="_blank">${esc(r.name)}</a><small>${esc(r.code)} · ${esc(r.market)}</small></td>
-      <td><span class="pill t-${esc(r.type)}">${esc(r.type)}</span>${r.corr ? ' <span class="pill st-todo" title="정정공시 — 정정 전 공시는 목록에서 대체됨">정정</span>' : ''}${r.unverified ? ' <span class="muted" title="KIND 접속 불가로 첨부 미확인">⚠</span>' : ''}</td>
-      <td class="num cap">${r.cap ? `<b>${r.capTxt}</b><small title="${esc(r.capSrc)} · 상장주식수 ${r.shares ? r.shares.toLocaleString() + '주' : '-'}">${out ? '대상 외' : r.capDt + ' 종가' + (r.final ? '' : ' · ' + (r.capSrc.startsWith('한투') ? '잠정' : '추정'))}</small>` : '<span class="muted">확인 중</span>'}</td>
+      <td class="co"><a href="${esc(r.url)}" target="_blank">${esc(r.name)}</a><small>${esc(r.code)} · ${esc(r.market)}</small>${ex ? `<small class="exinfo">제외 ${esc((xi.at || '').slice(5, 16).replace('-', '/'))} ${esc(xi.by || '')}${xi.reason ? ' · ' + esc(xi.reason) : ''}</small>` : ''}</td>
+      <td><span class="pill t-${esc(r.type)}">${esc(r.type)}</span>${r.corr ? ' <span class="pill st-todo" title="정정공시 — 정정 전 공시는 목록에서 대체됨">정정</span>' : ''}${r.unverified ? ' <span class="uv" title="첨부 미확인: 수집 당시 KIND·DART 모두 접속이 안 돼 PDF·한글·워드 첨부를 아직 확인하지 못했어요 (다음 실행 때 자동 재확인 → 첨부 없으면 목록에서 빠짐)">⚠ 첨부 미확인</span>' : ''}</td>
+      <td class="num cap">${r.cap ? `<b>${r.capTxt}</b><small title="${esc(r.capSrc)} · 상장주식수 ${r.shares ? r.shares.toLocaleString() + '주' : '-'}">${r.target === false ? '대상 외' : r.capDt + ' 종가' + (r.final ? '' : ' · ' + (r.capSrc.startsWith('한투') ? '잠정' : '추정'))}</small>` : '<span class="muted">확인 중</span>'}</td>
       <td class="num hide-m">${r.close ? r.close.toLocaleString() : '-'}</td>
       <td class="key hide-m">${esc(r.key)}</td>
       <td class="asg">${assignCell(r)}</td>
-      <td>${out ? '<span class="muted" style="font-size:12px">작성 대상 아님</span>' :
+      <td>${out ? `<span class="muted" style="font-size:12px">${ex ? '제외됨' : '작성 대상 아님'}</span>` :
         ['plan', 'impl'].map(f => `<label class="ck" style="vertical-align:top"><input type="checkbox" data-code="${esc(r.code)}" data-name="${esc(r.name)}" data-f="${f}" ${p[f] ? 'checked' : ''}>${f === 'plan' ? '계획' : '이행'} 발간`
           + (p[f] && (p[f + '_date'] || p[f + '_by']) ? `<small class="pubinfo">${esc((p[f + '_date'] || '').slice(2).replace(/-/g, '.'))} ${esc(p[f + '_by'] || '')}</small>` : '') + `</label>`).join('')
       + `<label class="ck rej"><input type="checkbox" data-code="${esc(r.code)}" data-name="${esc(r.name)}" data-f="reject" ${p.reject ? 'checked' : ''}>발간 거절</label>`}</td>
-      <td>${out ? '' : `<span class="pill ${STC[st]}">${st}</span>`}</td></tr>`;
+      <td>${out ? '' : `<span class="pill ${STC[st]}">${st}</span>`}</td>
+      <td>${ex ? `<button class="xbtn rs" data-r="${esc(r.id)}" data-name="${esc(r.name)}">↩ 복원</button>`
+        : `<button class="xbtn" data-x="${esc(r.id)}" data-name="${esc(r.name)}" title="이 공시를 작성 대상에서 제외 (언제든 복원 가능)">✕</button>`}</td></tr>`;
   }
-  document.getElementById('tb').innerHTML = h || `<tr><td colspan="9" class="muted" style="text-align:center;padding:40px">${dots(S.from) || '처음'} ~ ${dots(S.to)} 기간에 조건에 맞는 공시가 없습니다.</td></tr>`;
+  document.getElementById('tb').innerHTML = h || `<tr><td colspan="10" class="muted" style="text-align:center;padding:40px">${dots(S.from) || '처음'} ~ ${dots(S.to)} 기간에 조건에 맞는 공시가 없습니다.</td></tr>`;
 }
 document.addEventListener('change', async e => {
   const el = e.target;
@@ -276,8 +295,23 @@ document.addEventListener('change', async e => {
     render();
   }
 });
+async function setExclude(el, on) {
+  if (!T && !(await connect())) return;
+  let reason = '';
+  if (on) { reason = prompt(`${el.dataset.name} 공시를 작성 대상에서 제외할까요?\n(목록·건수·엑셀·텔레그램에서 빠지고, '제외됨'에서 언제든 복원)\n\n사유 (선택):`, ''); if (reason === null) return; }
+  el.disabled = true;
+  try {
+    await saveState(d => { if (on) d.exclude[el.dataset.x] = {name: el.dataset.name, by: WHO, at: now(), reason: reason.trim()}; else delete d.exclude[el.dataset.r]; },
+      `${on ? '공시 제외' : '제외 복원'}: ${el.dataset.name}`);
+    toast(on ? `${el.dataset.name}: 제외했어요 (제외됨에서 복원 가능)` : `${el.dataset.name}: 복원했어요`);
+    if (!on && !exRows().length && S.analyst === '__excl__') S.analyst = '';
+  } catch (err) { alert('저장 실패: ' + err.message); }
+  render();
+}
 document.addEventListener('click', e => { const el = e.target.closest('button'); if (!el) return;
   if (el.id === 'auth') { connect(); return; }
+  if (el.dataset.x) { setExclude(el, true); return; }
+  if (el.dataset.r) { setExclude(el, false); return; }
   if (el.id === 'pm-ok' || el.id === 'pm-cancel') return;
   if (el.id === 'tog') S.target = !S.target; else if (el.dataset.p) setPeriod(el.dataset.p);
   else if (el.dataset.s !== undefined) S.status = el.dataset.s;
@@ -286,7 +320,7 @@ document.addEventListener('click', e => { const el = e.target.closest('button');
   else if (el.id === 'xls') { const ws = XLSX.utils.json_to_sheet(view().map(r => { const p = STATE.pub[r.code] || {}; return {
       '공시일': dots(r.dt), '종목명': r.name, '공시 구분': r.type,
       '발표일 시총(억원)': r.cap ? Math.round(r.cap / 1e8) : null, '담당': analystsOf(r).join(', ') || (r.team ? '커버리지 외(1팀)' : '미분류'),
-      '발간 상태': r.target === false ? '작성 대상 아님' : statusOf(r.code),
+      '발간 상태': isEx(r) ? '제외' + (STATE.exclude[r.id].reason ? ' (' + STATE.exclude[r.id].reason + ')' : '') : r.target === false ? '작성 대상 아님' : statusOf(r.code),
       '계획 발간일': p.plan ? (p.plan_date || '') : '', '계획 발간인': p.plan ? (p.plan_by || '') : '',
       '이행 발간일': p.impl ? (p.impl_date || '') : '', '이행 발간인': p.impl ? (p.impl_by || '') : ''}; }));
     ws['!cols'] = [{wch: 11}, {wch: 18}, {wch: 9}, {wch: 15}, {wch: 14}, {wch: 13}, {wch: 11}, {wch: 10}, {wch: 11}, {wch: 10}]; const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '밸류업 현황');

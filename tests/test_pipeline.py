@@ -66,6 +66,14 @@ ROUTES = {
 }
 
 
+DART_ROUTES = {
+    "dsaf001/main.do?rcpNo=20260930900281": fx("dart_main_att.html"),
+    "dsaf001/main.do?rcpNo=20260930901024": fx("dart_main_noatt.html"),
+    "dcmNo=11596185": fx("dart_att_viewer.html"),
+    "dcmNo=11596183": fx("main.htm"),
+}
+
+
 @pytest.fixture()
 def env(tmp_path, monkeypatch):
     from app import config
@@ -90,6 +98,7 @@ def env(tmp_path, monkeypatch):
     w = worker.Worker()
     w.kind.s = FakeSession(dict(ROUTES))
     w.kind._warm = True
+    w.dartweb.s = FakeSession(dict(DART_ROUTES)); w.dartweb.delay = 0
     w.corp_map = {"지투파워": {"corp_code": "01586767", "stock_code": "388050", "corp_name": "지투파워"},
                   "세아제강지주": {"corp_code": "00128555", "stock_code": "003030", "corp_name": "세아제강지주"}}
     return w, db, sent
@@ -330,7 +339,7 @@ def test_action_run_site_and_buttons(env, monkeypatch, tmp_path):
     assert "지투파워" in sent[-1][1] and sent[-1][2][0][0]["callback_data"] == "pub:20260930000281:plan"
     assert docs and docs[0][2].endswith(".xlsx")
     html = (tmp_path / "docs" / "index.html").read_text(encoding="utf-8")
-    assert "지투파워" in html and "마지막 업데이트" in html and "xlsx.full.min.js" in html
+    assert "지투파워" in html and "공시 수집" in html and "xlsx.full.min.js" in html
     # 텔레그램 버튼 눌림 → 발간 체크
     telegram.handle_update({"update_id": 1, "callback_query": {"id": "c1", "data": "pub:20260930000281:plan",
                                                                "from": {"id": 99, "first_name": "길동"}}})
@@ -442,3 +451,79 @@ def test_announce_cap_sources(env, monkeypatch):
     monkeypatch.setattr(market, "krx_day", lambda d: {"003030": (117600, 4871 * 10**8, 4141657)})
     q = market.announce_cap("003030", None, date(2026, 9, 30), datetime(2026, 10, 6, 9, 0))
     assert (q["close"], q["mktcap"], q["shares"], q["src"], q["final"]) == (117600, 4871 * 10**8, 4141657, "KRX", True)
+
+
+def test_site_only_rebuild(env, tmp_path, monkeypatch):
+    import json, subprocess, sys
+    from app import config, pubsync, site
+    w, db, sent = env
+    monkeypatch.setattr(config, "SITE_DIR", tmp_path / "docs")
+    monkeypatch.setattr(pubsync, "PATH", tmp_path / "pub_status.json")
+    w.poll_kind(days=1)
+    (tmp_path / "pub_status.json").write_text(json.dumps({"pub": {"388050": {"plan": True, "at": "2026-10-06 14:20:00"}}}))
+    pubsync.pull(); site.build()
+    data = json.loads((tmp_path / "docs" / "data.json").read_text(encoding="utf-8"))
+    assert data["state"]["pub"]["388050"]["plan"] is True
+
+
+def test_exclude_and_restore(env, tmp_path, monkeypatch):
+    import json
+    from app import digest, pubsync, site
+    w, db, sent = env
+    monkeypatch.setattr(pubsync, "PATH", tmp_path / "pub_status.json")
+    w.poll_kind(days=1)
+    w.compute_caps()
+    fs = db.list_filings(days=0, limit=50)
+    a = fs[0]["acptno"]
+    before = len(digest.target_items(fs))
+    pubsync.set_exclude(a, True, by="홍소현", name=fs[0]["corp_name"], reason="중복")
+    assert a in pubsync.excluded_ids()
+    assert len(digest.target_items(fs)) == before - 1                    # 텔레그램에서 빠짐
+    row = next(r for r in site.rows_for_site() if r["id"] == a)
+    assert row["excluded"] is True                                        # 사이트엔 '제외됨'으로 남음
+    assert pubsync.push() and json.loads((tmp_path / "pub_status.json").read_text())["exclude"][a]["reason"] == "중복"
+    pubsync.set_exclude(a, False)                                         # 복원
+    assert len(digest.target_items(fs)) == before
+
+
+def test_unverified_rechecked_when_kind_back(env):
+    w, db, sent = env
+    w.kind_ok = False
+    routes = dict(w.kind.s.routes)
+    w.kind.s.routes = {}
+    w.register({"acptno": "20260930000835", "corp_name": "세아제강지주", "report_nm": "기업가치제고계획(자율공시)",
+                "rcept_dt": "20260930", "source": "dart"})
+    assert db.get_filing("20260930000835")["last_error"].startswith("첨부 미확인")
+    w.check("20260930000835")                                             # 아직 막힘 → ⚠ 유지
+    assert db.get_filing("20260930000835")["last_error"].startswith("첨부 미확인")
+    w.kind.s.routes = routes; w.kind_ok = True
+    w.kind.s.routes["acptno=20260930000835"] = fx("viewer.html")
+    assert w.recheck_unverified(days=3650) == 1
+    f = db.get_filing("20260930000835")
+    assert f["valid"] == 1 and not f["last_error"]                        # 첨부 확인 → ⚠ 사라짐
+
+
+def test_dart_fallback_when_kind_blocked(env):
+    """KIND가 막혀도 DART 뷰어의 첨부 목록으로 같은 판단"""
+    from app import dart
+    w, db, sent = env
+    w.kind_ok = False
+    w.kind.s.routes = {}
+    # 첨부 있음 (지투파워) → 인정, ⚠ 없음, 파일명·본문까지
+    w.register({"acptno": "20260930000281", "rcept_no": "20260930900281", "corp_name": "지투파워",
+                "report_nm": "기업가치제고계획(자율공시)", "rcept_dt": "20260930", "source": "dart"})
+    f = db.get_filing("20260930000281")
+    assert f["valid"] == 1 and not f["last_error"]
+    assert f["attachments"][0]["ext"] == "pdf" and f["attachments"][0]["name"].startswith("2026 지투파워(주) 기업가치제고계획")
+    assert f["plan_name"]
+    # 첨부 없음 (엠브레인) → 미인정 → 목록에서 빠짐
+    w.register({"acptno": "20260930001024", "rcept_no": "20260930901024", "corp_name": "엠브레인",
+                "report_nm": "기업가치제고계획(자율공시)", "rcept_dt": "20260930", "source": "dart"})
+    assert db.get_filing("20260930001024")["valid"] == 0
+    assert "20260930001024" not in [r["acptno"] for r in db.list_filings(days=0, limit=50)]
+    # DART도 거부 → 그때만 ⚠ 첨부 미확인
+    w.dartweb.s.routes = {"main.do": fx("dart_blocked.html")}
+    w.register({"acptno": "20260930000777", "corp_name": "지투파워", "report_nm": "기업가치제고계획(자율공시)",
+                "rcept_dt": "20260930", "source": "dart"})
+    assert db.get_filing("20260930000777")["last_error"].startswith("첨부 미확인")
+    assert dart.parse_att_options("<html></html>") is None

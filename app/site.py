@@ -20,6 +20,7 @@ def rows_for_site(days=None) -> list[dict]:
     out = []
     implset = pubsync.impl_codes()
     tmap = teamcfg.teams()
+    exc = pubsync.state()["exclude"]
     for r in db.list_filings(since=since, limit=100000):
         if not db.analysts_for(r["stock_code"]) and not teamcfg.visible_unassigned(r["stock_code"], tmap):
             continue   # 담당 없는 다른 팀 종목은 제외
@@ -34,12 +35,13 @@ def rows_for_site(days=None) -> list[dict]:
             "pub": pubsync.company_status(r["stock_code"], implset),
             "url": telegram.kind_url(r["acptno"]), "corr": bool(r.get("is_correction")),
             "unverified": str(r.get("last_error") or "").startswith("첨부 미확인"),
+            "excluded": r["acptno"] in exc,
         })
     return out
 
 
 def status_xlsx(days=365) -> bytes:
-    rows = [r for r in rows_for_site(days) if r["target"] is not False]
+    rows = [r for r in rows_for_site(days) if r["target"] is not False and not r["excluded"]]
     pub = pubsync.state()["pub"]
     cols = ["공시일", "종목명", "발표일 시총(억원)", "담당", "발간 상태", "계획 발간일", "계획 발간인", "이행 발간일", "이행 발간인"]
     df = pd.DataFrame([{"공시일": f"{r['dt'][:4]}.{r['dt'][4:6]}.{r['dt'][6:]}", "종목명": r["name"],
@@ -63,7 +65,7 @@ def build(out_dir: Path | None = None) -> Path:
     env = Environment(loader=FileSystemLoader(str(Path(__file__).parent / "templates")), autoescape=True)
     st = teamcfg.settings()
     data = {"rows": rows_for_site(), "analysts": st["tabs"] or db.analyst_names(), "assignees": teamcfg.assignees(),
-            "lastUpdate": db.get_meta("last_update") or "", "today": datetime.now().strftime("%Y%m%d"),
+            "lastUpdate": db.get_meta("last_update") or "", "stateUpdate": db.get_meta("state_update") or "", "today": datetime.now().strftime("%Y%m%d"),
             "capMin": config.CAP_MIN_EOK, "capMax": config.CAP_MAX_EOK,
             "repo": os.getenv("GITHUB_REPOSITORY", ""), "branch": os.getenv("GITHUB_REF_NAME", "main"),
             "capError": db.get_meta("cap_error") or "", "state": pubsync.state(),

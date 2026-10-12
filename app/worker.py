@@ -8,12 +8,13 @@ from datetime import datetime, timedelta
 from . import config, coverage, dart, db, digest, kind, market, summarize, telegram
 
 log = logging.getLogger(__name__)
-UNVERIFIED = "첨부 미확인 (KIND 접속 불가)"
+UNVERIFIED = "첨부 미확인 (KIND·DART 접속 불가)"
 
 
 class Worker:
     def __init__(self):
         self.kind = kind.KindClient()
+        self.dartweb = dart.DartWebClient()
         self.corp_map: dict = {}
         self.corp_map_date = None
         self.lock = threading.Lock()
@@ -81,15 +82,16 @@ class Worker:
         if not f:
             return
         try:
-            res = self.kind.inspect(acptno)
+            res = self._inspect(acptno, f)
         except Exception as e:  # noqa: BLE001
             if not self.kind_ok and not f["valid"]:
                 # KIND 자체가 막힌 환경: DART로 감지한 공시를 '첨부 미확인'으로 넘겨 알림은 가게 함
                 db.update_filing(acptno, valid=1, last_error=UNVERIFIED, last_checked=db.now(),
                                  kind_type=kind.classify(f["report_nm"]), check_count=f["check_count"] + 1)
-                log.warning("KIND 접속 불가 → 첨부 미확인으로 처리: %s", f["corp_name"])
+                log.warning("KIND·DART 모두 확인 불가 → 첨부 미확인으로 처리: %s", f["corp_name"])
                 return
-            db.update_filing(acptno, last_error=str(e)[:500], last_checked=db.now(),
+            keep = f["valid"] and str(f.get("last_error") or "").startswith("첨부 미확인")
+            db.update_filing(acptno, last_error=UNVERIFIED if keep else str(e)[:500], last_checked=db.now(),
                              check_count=f["check_count"] + 1)
             log.warning("KIND 확인 실패 %s: %s", acptno, e)
             return
@@ -133,6 +135,22 @@ class Worker:
                 db.update_filing(acptno, alerted_at=db.now())
             else:
                 db.update_filing(acptno, alerted_at="skipped")
+
+    def _inspect(self, acptno, f):
+        """첨부 확인: KIND 우선, 안 되면 DART 웹 뷰어로 같은 확인"""
+        err = None
+        if self.kind_ok:
+            try:
+                return self.kind.inspect(acptno)
+            except Exception as e:  # noqa: BLE001
+                err = e
+        rcept = f.get("rcept_no") or dart.to_dart_rcept_no(acptno)
+        try:
+            res = self.dartweb.inspect(rcept)
+            log.info("DART로 첨부 확인: %s → %s", f["corp_name"], "첨부 있음" if res["valid"] else "첨부 없음")
+            return res
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(f"KIND: {err or 'skip'} / DART: {e}") from e
 
     def _download(self, f):
         if not config.DOWNLOAD_FILES:
@@ -194,6 +212,17 @@ class Worker:
                     datetime.now() - timedelta(minutes=gap):
                 continue
             self.check(f["acptno"])
+
+    def recheck_unverified(self, days=60):
+        """⚠ 첨부 미확인(KIND 막혔을 때 DART로만 들어온 공시) → KIND가 열리면 다시 확인
+        첨부가 실제로 없으면 valid=0이 되어 목록에서 빠지고, 있으면 ⚠가 사라짐"""
+        since = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d")
+        with db.conn() as c:
+            ids = [r["acptno"] for r in c.execute(
+                "SELECT acptno FROM filings WHERE valid=1 AND last_error LIKE '첨부 미확인%' AND rcept_dt >= ?", (since,))]
+        for a in ids:
+            self.check(a, silent=True)
+        return len(ids)
 
     # ------------------------------------------------------------------
     def backfill(self, days):
@@ -331,6 +360,7 @@ class Worker:
             log.warning("DART 조회 실패: %s", e)
         db.set_meta("last_update", db.now())
         self.recheck_pending()
+        self.recheck_unverified()               # ⚠ 건: KIND 또는 DART로 다시 확인
         self.compute_caps(now)
         slot = force_slot or digest.due_slot(now)
         sent = []

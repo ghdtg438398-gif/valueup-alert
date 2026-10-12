@@ -47,12 +47,13 @@ def key_line(f: dict, n: int = 140) -> str:
 
 def target_items(filings: list[dict], only_analyst: str | None = None) -> list[tuple]:
     """알림 대상: 발표일 시총 범위 안(미확인 포함) → [(담당자들, 공시)] 담당자순"""
-    from . import teamcfg
+    from . import pubsync, teamcfg
     tmap = teamcfg.teams()
+    exc = pubsync.excluded_ids()
     items = []
     for f in filings:
-        if f.get("target") is False:
-            continue
+        if f.get("target") is False or f.get("acptno") in exc:
+            continue   # 시총 범위 밖 / 사이트에서 '제외'한 공시
         ans = db.analysts_for(f.get("stock_code") or "")
         if not ans and not teamcfg.visible_unassigned(f.get("stock_code"), tmap):
             continue   # 다른 팀 종목

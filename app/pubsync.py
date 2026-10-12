@@ -1,6 +1,7 @@
 """공유 상태 파일(data/pub_status.json): 종목별 발간 체크 + 담당자 수정
 
-형식: {"pub": {종목코드: {plan, impl, by, at}}, "assign": {종목코드: {analyst, by, at}}}
+형식: {"pub": {종목코드: {plan, impl, by, at}}, "assign": {종목코드: {analyst, by, at}},
+       "exclude": {접수번호: {name, by, at, reason}}}   ← 이상한 공시를 작성 대상에서 제외 (복원 = 삭제)
 - 사이트에서 수정 → GitHub API로 이 파일을 직접 수정 (각자 토큰 1회 등록)
 - 텔레그램 버튼 → 실행 때 반영 후 이 파일에 기록
 - 실행할 때 파일 → DB(meta)로 읽어 알림·엑셀·사이트에 사용
@@ -17,7 +18,8 @@ NONE = "-"   # 담당 '커버리지 외'로 지정
 
 def _norm(d) -> dict:
     d = d if isinstance(d, dict) else {}
-    return {"pub": dict(d.get("pub") or {}), "assign": dict(d.get("assign") or {})}
+    return {"pub": dict(d.get("pub") or {}), "assign": dict(d.get("assign") or {}),
+            "exclude": dict(d.get("exclude") or {})}
 
 
 def load_file() -> dict:
@@ -71,10 +73,27 @@ def assigned(code) -> list[str] | None:
     return [] if a["analyst"] == NONE else [a["analyst"]]
 
 
+def excluded_ids() -> set:
+    """사이트에서 '제외'한 공시 접수번호"""
+    return set(state()["exclude"])
+
+
+def set_exclude(acptno, on=True, by="", name="", reason=""):
+    st = state()
+    if on:
+        st["exclude"][acptno] = {"name": name, "by": by, "reason": reason,
+                                 "at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+    else:
+        st["exclude"].pop(acptno, None)
+    _save_state(st)
+
+
 def impl_codes() -> set:
+    ex = excluded_ids()
     with db.conn() as c:
         return {r["stock_code"] for r in c.execute(
-            "SELECT DISTINCT stock_code FROM filings WHERE valid=1 AND kind_type LIKE '이행%' AND stock_code IS NOT NULL")}
+            "SELECT acptno, stock_code FROM filings WHERE valid=1 AND superseded_by IS NULL "
+            "AND kind_type LIKE '이행%' AND stock_code IS NOT NULL") if r["acptno"] not in ex}
 
 
 def company_status(code, implset=None) -> str:

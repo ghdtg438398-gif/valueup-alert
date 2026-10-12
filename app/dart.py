@@ -94,3 +94,98 @@ def fetch_list(bgn_de: str, end_de: str, session: requests.Session | None = None
         page += 1
         time.sleep(0.3)
     return out
+
+
+# ----------------------------------------------------------------------
+# DART 웹 뷰어로 첨부파일 확인 (KIND가 막혔을 때 대신 사용)
+#   main.do?rcpNo=…  → <select id="att"> 첨부 목록 (값: rcpNo=…&dcmNo=…)
+#   report/viewer.do?rcpNo=…&dcmNo=… → 첨부문서 안의 파일 링크 (/report/download.do?dcmNo=…&flNm=파일명.pdf)
+#   첨부 목록이 '+첨부선택+' 하나뿐이면 → 첨부 없음 (KIND에서도 동일하게 첨부 없음)
+# ----------------------------------------------------------------------
+WEB = "https://dart.fss.or.kr"
+
+
+class DartBlocked(Exception):
+    """DART 웹 접속 거부·구조 변경 → 판단 보류"""
+
+
+class DartWebClient:
+    def __init__(self, delay=1.0):
+        self.s = requests.Session()
+        self.s.headers.update(config.HTTP_HEADERS)
+        self.delay = delay   # DART는 빠르게 연속 요청하면 '거부' 페이지를 줌
+
+    def _html(self, url) -> str:
+        from .kind import decode_html
+        if self.delay:
+            time.sleep(self.delay)
+        r = self.s.get(url, timeout=20)
+        r.raise_for_status()
+        html = decode_html(r.content)
+        if re.search(r"<title>\s*거부\s*</title>", html):
+            raise DartBlocked("DART 접속 거부(요청 과다)")
+        return html
+
+    def _viewer(self, rcp, dcm) -> str:
+        return self._html(f"{WEB}/report/viewer.do?rcpNo={rcp}&dcmNo={dcm}&eleId=0&offset=0&length=0&dtd=HTML")
+
+    def inspect(self, rcept_no: str) -> dict:
+        from .kind import parse_main_body
+        main = self._html(f"{WEB}/dsaf001/main.do?rcpNo={rcept_no}")
+        atts, main_dcm = parse_att_options(main), parse_main_dcm(main, rcept_no)
+        if atts is None:
+            raise DartBlocked("DART 뷰어에서 첨부 목록을 찾지 못함")
+        res = {"attachments": [], "body": {}, "attached_docs": [(d, t) for _, d, t in atts],
+               "prior_dates": [], "source": "dart"}
+        if main_dcm:
+            try:
+                html = self._viewer(rcept_no, main_dcm)
+                res["body"] = parse_main_body(html)
+            except Exception as e:  # noqa: BLE001
+                log.info("DART 본문 읽기 실패(첨부 확인은 계속): %s", e)
+        for rcp, dcm, title in atts:
+            html = self._viewer(rcp, dcm)
+            for a in parse_file_links(html):
+                a["doc_title"] = title
+                res["attachments"].append(a)
+        res["valid"] = any(a["ext"] in config.VALID_EXTS for a in res["attachments"])
+        return res
+
+
+def parse_att_options(html: str):
+    """첨부 select → [(rcpNo, dcmNo, 제목)]. select 자체가 없으면 None(판단 불가)"""
+    m = re.search(r'<select[^>]*id="att"[^>]*>(.*?)</select>', html, re.S)
+    if not m:
+        return None
+    out = []
+    for val, text in re.findall(r'<option[^>]*value="([^"]*)"[^>]*>(.*?)</option>', m.group(1), re.S):
+        val = val.replace("&amp;", "&")
+        q = dict(re.findall(r"(rcpNo|dcmNo)=(\d+)", val))
+        if "dcmNo" in q:
+            title = re.sub(r"\s+", " ", re.sub(r"<[^>]+>|&nbsp;", " ", text)).strip()
+            out.append((q.get("rcpNo", ""), q["dcmNo"], title))
+    return out
+
+
+def parse_main_dcm(html: str, rcept_no: str):
+    m = re.search(r'viewDoc\("%s",\s*"(\d+)"' % rcept_no, html) or \
+        re.search(r"openPdfDownload\('%s',\s*'(\d+)'\)" % rcept_no, html)
+    return m.group(1) if m else None
+
+
+def parse_file_links(html: str) -> list[dict]:
+    """DART 첨부문서 안의 파일 링크: /report/download.do?dcmNo=…&flNm=파일명.pdf"""
+    from urllib.parse import unquote_plus
+    out, seen = [], set()
+    for href in re.findall(r'href="([^"]*download\.do[^"]*)"', html):
+        href = href.replace("&amp;", "&")
+        m = re.search(r"flNm=([^&#]+)", href)
+        if not m:
+            continue
+        name = unquote_plus(m.group(1))
+        ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+        url = href if href.startswith("http") else WEB + href
+        if ext in config.FILE_EXTS and url not in seen:
+            seen.add(url)
+            out.append({"name": name, "url": url, "ext": ext})
+    return out
