@@ -35,6 +35,7 @@ def main():
     ap.add_argument("--digest-now", action="store_true")
     ap.add_argument("--action", action="store_true")
     ap.add_argument("--site-only", action="store_true")
+    ap.add_argument("--merge-state", default="", help="저장 직전 상태 파일 병합 (GitHub Actions용)")
     ap.add_argument("--slot", default="")
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--port", type=int, default=8000)
@@ -54,10 +55,16 @@ def main():
                           + "·".join(config.DIGEST_TIMES) + " 정기 리포트)")
         print("성공" if r else "실패 — 토큰/chat_id를 확인하세요 (봇을 단톡방에 초대했는지도)")
         return
+    if args.merge_state:
+        from app import pubsync
+        pubsync.merge_into_remote(args.merge_state)
+        print("상태 파일 병합 완료")
+        return
     if args.site_only:
         # 사이트에서 발간 체크·담당을 바꾸거나 커버리지 엑셀을 올렸을 때: 수집 없이 사이트만 다시 만들기
         from app import pubsync, site
         w.sync_coverage()
+        w.reclassify_once()
         pubsync.pull()
         try:
             if w.process_additions():          # 과거 공시 추가 요청이 있으면 바로 불러오기
