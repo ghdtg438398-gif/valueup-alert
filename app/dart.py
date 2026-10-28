@@ -62,8 +62,9 @@ def fetch_corp_map(session: requests.Session | None = None) -> dict:
     return out
 
 
-def fetch_list(bgn_de: str, end_de: str, session: requests.Session | None = None) -> list[dict]:
-    """기간 내 거래소공시(I) 전체를 받아 기업가치제고 공시만 반환 (KIND 감지의 백업용)"""
+def fetch_list(bgn_de: str, end_de: str, session: requests.Session | None = None, corp_code: str | None = None) -> list[dict]:
+    """기간 내 거래소공시(I) 전체를 받아 기업가치제고 공시만 반환 (KIND 감지의 백업용)
+    corp_code를 주면 그 회사만 (기간 제한 없이 과거 공시까지)"""
     s = session or requests.Session()
     out, page = [], 1
     while True:
@@ -77,6 +78,8 @@ def fetch_list(bgn_de: str, end_de: str, session: requests.Session | None = None
             "sort": "date",
             "sort_mth": "desc",
         }
+        if corp_code:
+            params["corp_code"] = corp_code
         r = s.get(LIST_URL, params=params, timeout=20)
         r.raise_for_status()
         js = r.json()

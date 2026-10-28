@@ -2,7 +2,8 @@
 
 형식: {"pub": {종목코드: {plan, impl, by, at}}, "assign": {종목코드: {analyst, by, at}},
        "exclude": {접수번호: {name, by, at, reason}},   ← 이상한 공시를 작성 대상에서 제외 (복원 = 삭제)
-       "defer": {접수번호: {year, reason, by, at, name, from}}}   ← 보고서 작성 연도 이월
+       "defer": {종목코드:단계: {year, reason, by, at, name, from}},   ← 보고서 작성 연도 이월 (단계 plan/impl)
+       "add": {검색어: {query, by, at, done, result}}}   ← 1년보다 오래된 공시 개별 추가 (다음 실행 때 DART에서 불러옴)
 - 사이트에서 수정 → GitHub API로 이 파일을 직접 수정 (각자 토큰 1회 등록)
 - 텔레그램 버튼 → 실행 때 반영 후 이 파일에 기록
 - 실행할 때 파일 → DB(meta)로 읽어 알림·엑셀·사이트에 사용
@@ -20,7 +21,8 @@ NONE = "-"   # 담당 '커버리지 외'로 지정
 def _norm(d) -> dict:
     d = d if isinstance(d, dict) else {}
     return {"pub": dict(d.get("pub") or {}), "assign": dict(d.get("assign") or {}),
-            "exclude": dict(d.get("exclude") or {}), "defer": dict(d.get("defer") or {})}
+            "exclude": dict(d.get("exclude") or {}), "defer": dict(d.get("defer") or {}),
+            "add": dict(d.get("add") or {})}
 
 
 def load_file() -> dict:
@@ -111,8 +113,3 @@ def company_status(code, implset=None) -> str:
     implset = impl_codes() if implset is None else implset
     return "이행 미발간" if code in implset else "이행 미공시"
 
-
-def work_year(acptno, rcept_dt) -> int:
-    """보고서 작성 연도: 공시 연도, 이월했으면 그 연도"""
-    d = state()["defer"].get(acptno) or {}
-    return int(d.get("year") or str(rcept_dt)[:4])

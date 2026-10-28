@@ -69,6 +69,7 @@ tr.out td{color:var(--muted)}tr.out .pill{opacity:.5}
 .seg.yr{align-items:center}.seg.yr .lbl{font-size:11.5px;color:var(--muted);font-weight:700;padding:0 8px 0 10px}
 .range.dim{opacity:.4}
 .dfnote{display:block;max-width:260px;margin-top:3px;border:0;background:var(--pu-soft);color:var(--pu);border-radius:6px;padding:2px 7px;font:500 11.5px Pretendard,sans-serif;text-align:left;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tkinfo{display:block;font-size:11px;color:var(--pu);font-weight:600}
 .xbtn.dfb{color:var(--pu)}
 .tog.sm{padding:6px 10px;font-size:12.5px}
 .modal input,.modal select{font:14px Pretendard,sans-serif;padding:7px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink)}
@@ -96,11 +97,12 @@ tr.out td{color:var(--muted)}tr.out .pill{opacity:.5}
   </div>
   <div class="card">
     <div class="chips"><span id="chips" style="display:contents"></span>
-      <div class="right"><button class="tog sm" id="hidedone" hidden><span class="sw" id="hdsw"></span>발간 완료 숨기기</button><div class="seg" id="types"></div><button class="btn" id="xls">⬇ 엑셀</button></div></div>
+      <div class="right"><button class="tog sm" id="hidedone" hidden><span class="sw" id="hdsw"></span>발간 완료 숨기기</button><div class="seg" id="types"></div><button class="btn" id="addold" title="1년보다 오래된 공시를 회사 단위로 불러오기">＋ 과거 공시</button><button class="btn" id="xls">⬇ 엑셀</button></div></div>
     <div class="stbar" id="stbar"></div>
     <div class="tw"><table>
       <thead><tr><th>시각</th><th>종목</th><th>공시 구분</th><th class="num">발표일 시총</th><th class="num hide-m">종가</th><th class="hide-m">핵심</th><th>담당</th><th>발간 체크</th><th>상태</th><th></th></tr></thead>
       <tbody id="tb"></tbody></table></div>
+    <div class="note" id="addnote" hidden></div>
     <div class="note">발간 체크·담당(이름 클릭)은 종목 단위로 바로 저장되어 팀 전체에 공유됩니다 (처음 한 번 <b>수정 권한 연결</b> 필요) · 발표일 시총 = 공시일 종가 × 상장주식수 · PDF·한글·워드 첨부 확인된 공시만 (⚠ 첨부 미확인 = 접속 문제로 아직 확인 못 함) · 이상한 공시는 맨 오른쪽 ✕로 제외, <b>제외됨</b>에서 복원</div>
   </div>
 </div></main><div class="toast" id="toast"></div>
@@ -131,8 +133,7 @@ let D = {{ data_json|safe }};
 const S = {period: 'today', from: '', to: '', analyst: '', type: '', target: true, status: '', hideDone: false, year: ''};
 const P = {today: '오늘', week: '이번 주', month: '최근 30일', year: '1년', all: '전체'};
 const ST = ['미발간', '이행 미공시', '이행 미발간', '발간 완료', '발간 거절'];
-const STY = ['미작성', '작성 완료', '발간 거절'];          // 연도별 보기: 공시 1건 = 보고서 1건
-const STC = {'미작성': 'st-no', '작성 완료': 'st-done', '미발간': 'st-no', '이행 미공시': 'st-wait', '이행 미발간': 'st-todo', '발간 완료': 'st-done', '발간 거절': 'st-rej'};
+const STC = {'미발간': 'st-no', '이행 미공시': 'st-wait', '이행 미발간': 'st-todo', '발간 완료': 'st-done', '발간 거절': 'st-rej'};
 const W = '일월화수목금토';
 const ymd = d => d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
 const td = new Date(+D.today.slice(0,4), +D.today.slice(4,6) - 1, +D.today.slice(6));
@@ -149,7 +150,7 @@ const LSset = (k, v) => { try { v ? localStorage.setItem(k, v) : localStorage.re
 let T = LS('vu_token'); let REPO = LS('vu_repo') || D.repo; let WHO = LS('vu_who') || '';
 let STATE = norm(D.state);
 const FILE = 'data/pub_status.json';
-function norm(x) { x = x || {}; return {pub: x.pub || {}, assign: x.assign || {}, exclude: x.exclude || {}, defer: x.defer || {}}; }
+function norm(x) { x = x || {}; return {pub: x.pub || {}, assign: x.assign || {}, exclude: x.exclude || {}, defer: x.defer || {}, add: x.add || {}}; }
 const isEx = r => !!STATE.exclude[r.id];
 const gh = (path, opt = {}) => fetch(`https://api.github.com/repos/${REPO}/contents/${path}`, {...opt,
   headers: {'Authorization': 'Bearer ' + T, 'Accept': 'application/vnd.github+json', ...(opt.headers || {})}});
@@ -249,16 +250,17 @@ async function editReject(code, name) {
   } catch (err) { alert('저장 실패: ' + err.message); }
   render();
 }
-// ---- 다음 해로 이월: 연도 + 사유(필수) ----
-async function editDefer(id, name) {
-  const r = D.rows.find(x => x.id === id); if (!r) return;
+// ---- 다음 해로 이월: 종목·단계(계획/이행) 단위, 연도 + 사유(필수) ----
+async function editDefer(key, name) {
+  const t = tasks().find(x => x.key === key); if (!t) return;
   if (!T && !(await connect())) return;
-  const m = document.getElementById('defmodal'), cur = STATE.defer[id] || {}, y0 = pubYear(r), wy = workYear(r);
-  document.getElementById('df-title').textContent = `${name} · 보고서 이월`;
-  document.getElementById('df-sub').textContent = `${dots(r.dt)} ${r.type} 공시 · 지금 작성 연도 ${wy}년`;
-  document.getElementById('df-year').innerHTML = [1, 2, 3].map(k => y0 + k).map(y => `<option value="${y}" ${(cur.year ? +cur.year : wy + 1) === y ? 'selected' : ''}>${y}년에 작성</option>`).join('');
+  const m = document.getElementById('defmodal'), cur = t.defer || {}, y0 = t.natural;
+  const stg = t.stage === 'impl' ? '이행' : '계획';
+  document.getElementById('df-title').textContent = `${name} · ${stg} 보고서 이월`;
+  document.getElementById('df-sub').textContent = `${dots(t.row.dt)} ${t.row.type} 공시 · 원래 ${y0}년 작성 → 지금 ${t.year}년`;
+  document.getElementById('df-year').innerHTML = [1, 2, 3].map(k => y0 + k).map(y => `<option value="${y}" ${(cur.year ? +cur.year : y0 + 1) === y ? 'selected' : ''}>${y}년에 작성</option>`).join('');
   document.getElementById('df-reason').value = cur.reason || '';
-  document.getElementById('df-by').value = cur.by || analystsOf(r)[0] || WHO;
+  document.getElementById('df-by').value = cur.by || analystsOf(t.row)[0] || WHO;
   document.getElementById('pm-names').innerHTML = (D.assignees || D.analysts).map(a => `<option value="${esc(a)}">`).join('');
   const off = document.getElementById('df-off'); off.hidden = !cur.year;
   m.hidden = false; document.getElementById('df-reason').focus();
@@ -273,10 +275,22 @@ async function editDefer(id, name) {
   });
   if (!info) return;
   try {
-    await saveState(d => { if (info === 'off') delete d.defer[id];
-      else d.defer[id] = {year: info.year, reason: info.reason, by: info.by || WHO, at: now(), name, from: y0}; },
-      info === 'off' ? `이월 취소: ${name}` : `보고서 이월: ${name} → ${info.year}년 (${info.reason.slice(0, 40)})`);
+    await saveState(d => { (t.legacy || []).forEach(k => delete d.defer[k]);
+      if (info === 'off') delete d.defer[key];
+      else d.defer[key] = {year: info.year, reason: info.reason, by: info.by || WHO, at: now(), name, stage: t.stage, from: y0}; },
+      info === 'off' ? `이월 취소: ${name}` : `보고서 이월: ${name} ${stg} → ${info.year}년 (${info.reason.slice(0, 40)})`);
     toast(info === 'off' ? `${name}: ${y0}년 작성으로 되돌렸어요` : `${name}: ${info.year}년 작성으로 넘겼어요`);
+  } catch (err) { alert('저장 실패: ' + err.message); }
+  render();
+}
+// ---- 1년보다 오래된 공시 개별 추가 (다음 실행 때 DART에서 그 회사 밸류업 공시를 전부 불러옴) ----
+async function addOld() {
+  const q = (prompt('불러올 회사의 종목명 또는 종목코드 (예: AK홀딩스 또는 006840)\n2024년 5월 이후 그 회사의 밸류업 공시를 모두 불러와요 (알림 없이)') || '').trim();
+  if (!q) return;
+  if (!T && !(await connect())) return;
+  try {
+    await saveState(d => { d.add = d.add || {}; d.add[q] = {query: q, by: WHO, at: now()}; }, `과거 공시 추가 요청: ${q}`);
+    toast(`${q}: 요청했어요. 불러오면 목록에 나타나요`);
   } catch (err) { alert('저장 실패: ' + err.message); }
   render();
 }
@@ -289,24 +303,46 @@ function statusOf(code) { const p = STATE.pub[code] || {};
   if (p.reject) return '발간 거절';
   if (!p.plan) return '미발간'; if (p.impl) return '발간 완료'; return implDisclosed(code) ? '이행 미발간' : '이행 미공시'; }
 
-// ---- 작성 연도: 기본은 공시 연도, 이월하면 그 해로 ----
-const pubYear = r => +r.dt.slice(0, 4);
-const workYear = r => +((STATE.defer[r.id] || {}).year || pubYear(r));
-function taskStatus(r) {   // 이 공시에 대한 보고서 (계획 공시 → 계획 보고서, 이행 공시 → 이행 보고서)
-  const p = STATE.pub[r.code] || {}; const stage = r.type.startsWith('이행') ? 'impl' : 'plan';
-  if (p.reject && (!p.reject_stage || p.reject_stage === stage)) return '발간 거절';
-  return p[stage] ? '작성 완료' : '미작성'; }
-const stOf = r => S.year ? taskStatus(r) : statusOf(r.code);
-const DONE = () => S.year ? '작성 완료' : '발간 완료';
-function yearList() { const ys = new Set(D.rows.map(pubYear)); Object.values(STATE.defer).forEach(v => v.year && ys.add(+v.year));
-  ys.add(td.getFullYear()); return [...ys].filter(y => y >= td.getFullYear() - 2).sort(); }
-function inPeriod() { if (S.year) return D.rows.filter(r => workYear(r) === S.year);
+// ---- 작성 연도: 종목 단위 '지금 써야 할 보고서' ----
+//  계획 미발간 → 계획 공시 연도에 '계획 보고서'
+//  계획 발간  → 다음 해로 넘어가 '이행 보고서' (이행 공시가 더 늦게 나오면 그 해로 자동 이동)
+//  둘 다 발간 → 이행 발간한 해에 '발간 완료'
+//  이월하면 그 해로 (종목·단계별, 사유 필수)
+const yr = x => x ? +String(x).slice(0, 4) : 0;
+const isImpl = r => r.type.startsWith('이행');
+let TASKS = null;
+function tasks() { if (TASKS) return TASKS;
+  const by = {};
+  for (const r of D.rows) { if (!r.code || isEx(r)) continue; (by[r.code] = by[r.code] || []).push(r); }
+  TASKS = [];
+  for (const [code, fs] of Object.entries(by)) {
+    fs.sort((a, b) => a.dt.localeCompare(b.dt));
+    const p = STATE.pub[code] || {};
+    const planF = fs.filter(r => !isImpl(r)).pop();
+    const implF = fs.filter(r => isImpl(r) && (!planF || r.dt >= planF.dt)).pop();   // 계획 공시 뒤에 나온 이행 공시만
+    const planYear = yr(p.plan_date) || yr((planF || fs[0]).dt);
+    let stage, row, natural;
+    if (p.plan && p.impl) { stage = 'done'; row = implF || planF; natural = yr(p.impl_date) || yr(row.dt); }
+    else if (p.plan) { stage = 'impl'; row = implF || planF; natural = implF ? Math.max(yr(implF.dt), planYear) : planYear + 1; }
+    else { stage = 'plan'; row = planF || fs[fs.length - 1]; natural = yr(row.dt); }
+    const key = code + ':' + stage;
+    const legacy = fs.map(f => f.id).filter(id => STATE.defer[id]);          // 예전 방식(공시별) 이월 기록
+    const defer = STATE.defer[key] || (stage !== 'done' && legacy.length ? STATE.defer[legacy[legacy.length - 1]] : null);
+    TASKS.push({key, code, row, stage, natural, year: defer ? +defer.year : natural, defer, legacy});
+  }
+  return TASKS; }
+const taskOf = r => tasks().find(t => t.row === r);
+const stOf = r => statusOf(r.code);      // 상태는 연도별 보기에서도 동일 (계획·이행 둘 다 발간 = 발간 완료)
+const DONE = () => '발간 완료';
+function yearList() { const ys = new Set(D.rows.map(r => yr(r.dt))); tasks().forEach(t => ys.add(t.year));
+  ys.add(td.getFullYear()); return [...ys].filter(Boolean).sort(); }   // 공시가 있는 해 + 올해 + 과제가 있는 해 → 해가 바뀌면 자동 추가
+function inPeriod() { if (S.year) return tasks().filter(t => t.year === S.year).map(t => t.row);
   const f = S.from || '00000000', t = S.to || '99999999'; return D.rows.filter(r => r.dt >= f && r.dt <= t); }
-const deferredOut = () => D.rows.filter(r => S.year && pubYear(r) <= S.year && workYear(r) > S.year && !isEx(r)
-  && (!S.target || (r.target !== false && !other(r))));     // 이 해에서 다음 해로 넘긴 건
-const exRows = () => inPeriod().filter(isEx);                   // 제외한 공시 (기간 안)
+const deferredOut = () => tasks().filter(t => S.year && t.defer && t.natural <= S.year && t.year > S.year).map(t => t.row)
+  .filter(r => !S.target || r.target !== false);     // 이 해에서 다음 해로 넘긴 건
+const exRows = () => S.year ? D.rows.filter(r => isEx(r) && yr(r.dt) === S.year) : inPeriod().filter(isEx);   // 제외한 공시
 function base() {
-  return inPeriod().filter(r => !isEx(r) && (!S.target || (r.target !== false && !other(r)))
+  return inPeriod().filter(r => !isEx(r) && (!S.target || r.target !== false)
     && (!S.type || (S.type === '이행' ? r.type.startsWith('이행') : r.type !== '이행'))); }
 const unk = r => !analystsOf(r).length && !r.team;            // 산업구분 시트에 없는 종목
 const MY = D.myTeam || '리서치1팀';
@@ -329,7 +365,7 @@ function assignCell(r) {
   return `<span class="who">${cur.length ? esc(cur.join(', ')) : none}${ov ? ' <small title="직접 지정">✎</small>' : ''}</span>
     <select class="as" data-code="${esc(r.code)}" data-name="${esc(r.name)}" title="담당 바꾸기">${opts.join('')}</select>`;
 }
-function render() {
+function render() { TASKS = null;
   document.getElementById('auth').textContent = T ? '✓ 수정 권한 연결됨' + (WHO ? ' · ' + WHO : '') : '🔑 수정 권한 연결';
   const ce = document.getElementById('caperr'); ce.hidden = !D.capError; ce.textContent = '⚠ ' + D.capError;
   const md = x => x ? x.slice(5, 16).replace('-', '/') : '';
@@ -349,9 +385,11 @@ function render() {
   const chip = (k, label, n) => `<button class="chip ${S.analyst === k ? 'on' : ''}" data-a="${esc(k)}">${esc(label)}<em>${n}</em></button>`;
   document.getElementById('chips').innerHTML = chip('', '전체', b.filter(r => !outside(r) && !other(r)).length) + D.analysts.map(a => chip(a, a, b.filter(r => analystsOf(r).includes(a)).length)).join('')
     + chip('__none__', `커버리지 외 (${shortTeam(MY)})`, b.filter(outside).length) + chip('__unk__', '미분류', b.filter(unk).length)
-    + (!S.target || S.analyst === '__other__' ? chip('__other__', '다른 팀', b.filter(other).length) : '')
-    + (S.year && (deferredOut().length || S.analyst === '__defer__') ? `<button class="chip ex ${S.analyst === '__defer__' ? 'on' : ''}" data-a="__defer__" title="${S.year}년 공시 중 다음 해로 넘긴 보고서">${S.year + 1}년 이후로 이월<em>${deferredOut().length}</em></button>` : '')
+    + chip('__other__', '다른 팀', b.filter(other).length)
+    + (S.year && (deferredOut().length || S.analyst === '__defer__') ? `<button class="chip ex ${S.analyst === '__defer__' ? 'on' : ''}" data-a="__defer__" title="${S.year}년에 쓸 보고서 중 다음 해 이후로 넘긴 것">${S.year + 1}년 이후로 이월<em>${deferredOut().length}</em></button>` : '')
     + (exRows().length || S.analyst === '__excl__' ? `<button class="chip ex ${S.analyst === '__excl__' ? 'on' : ''}" data-a="__excl__" title="작성 대상에서 뺀 공시 — 여기서 복원">제외됨<em>${exRows().length}</em></button>` : '');
+  const adds = Object.entries(STATE.add || {}); const an = document.getElementById('addnote'); an.hidden = !adds.length;
+  an.innerHTML = '과거 공시 추가: ' + adds.map(([k, v]) => `<b>${esc(v.name || v.query || k)}</b> ${v.done ? '— ' + esc(v.result || '완료') : '— 불러오는 중 (1~3분, 예약 실행만 있으면 다음 실행 때)'}`).join(' · ');
   const hd = document.getElementById('hidedone'); hd.hidden = !isPerson(S.analyst);
   document.getElementById('hdsw').className = 'sw' + (S.hideDone ? ' on' : '');
   // 발간 상태별 칸 (전체 탭 / 연도별 보기에서는 위원님 탭에도)
@@ -360,15 +398,15 @@ function render() {
     sb.hidden = false; const tg = byAnalyst(b).filter(r => r.target !== false && !other(r));
     sb.innerHTML = `<span class="muted" style="font-size:12px;font-weight:600;margin-right:4px">${S.year ? S.year + '년 작성할 보고서' : '발간 상태'}</span>`
       + `<button class="sbtn ${!S.status ? 'on' : ''}" data-s="">전체<em>${tg.length}</em></button>`
-      + (S.year ? STY : ST).map(x => `<button class="sbtn ${STC[x]} ${S.status === x ? 'on' : ''}" data-s="${x}">${x}<em>${tg.filter(r => stOf(r) === x).length}</em></button>`).join(''); }
+      + ST.map(x => `<button class="sbtn ${STC[x]} ${S.status === x ? 'on' : ''}" data-s="${x}">${x}<em>${tg.filter(r => stOf(r) === x).length}</em></button>`).join(''); }
   const rows = view(); let day = ''; let h = '';
   for (const r of rows) {
     if ((S.year || S.period !== 'today') && r.dt !== day) { day = r.dt; const dd = new Date(+r.dt.slice(0,4), +r.dt.slice(4,6) - 1, +r.dt.slice(6));
       h += `<tr class="day"><td colspan="10">${dots(r.dt)} (${W[dd.getDay()]})</td></tr>`; }
     const ex = isEx(r); const ot = other(r); const out = r.target === false || ex || ot; const p = STATE.pub[r.code] || {}; const st = stOf(r);
-    const xi = STATE.exclude[r.id] || {}; const df = STATE.defer[r.id];
+    const xi = STATE.exclude[r.id] || {}; const tk = S.year ? taskOf(r) : null; const df = tk && tk.defer;
     h += `<tr class="${out ? 'out' : ''}"><td class="muted">${r.time}</td>
-      <td class="co"><a href="${esc(r.url)}" target="_blank">${esc(r.name)}</a><small>${esc(r.code)} · ${esc(r.market)}</small>${ex ? `<small class="exinfo">제외 ${esc((xi.at || '').slice(5, 16).replace('-', '/'))} ${esc(xi.by || '')}${xi.reason ? ' · ' + esc(xi.reason) : ''}</small>` : ''}${df ? `<button class="dfnote" data-df="${esc(r.id)}" data-name="${esc(r.name)}" title="${esc(df.reason || '')}">↷ ${pubYear(r)} 공시 → <b>${esc(df.year)}년 작성</b> · ${esc(df.reason || '')}</button>` : ''}</td>
+      <td class="co"><a href="${esc(r.url)}" target="_blank">${esc(r.name)}</a><small>${esc(r.code)} · ${esc(r.market)}</small>${ex ? `<small class="exinfo">제외 ${esc((xi.at || '').slice(5, 16).replace('-', '/'))} ${esc(xi.by || '')}${xi.reason ? ' · ' + esc(xi.reason) : ''}</small>` : ''}${tk && tk.stage !== 'done' ? `<small class="tkinfo">${tk.stage === 'impl' ? '이행 보고서' : '계획 보고서'} · ${tk.natural}년${df ? '' : ' 작성'}</small>` : ''}${df ? `<button class="dfnote" data-df="${esc(tk.key)}" data-name="${esc(r.name)}" title="${esc(df.reason || '')}">↷ ${tk.natural} → <b>${esc(df.year)}년 작성</b> · ${esc(df.reason || '')}</button>` : ''}</td>
       <td><span class="pill t-${esc(r.type)}">${esc(r.type)}</span>${r.corr ? ' <span class="pill st-todo" title="정정공시 — 정정 전 공시는 목록에서 대체됨">정정</span>' : ''}${r.unverified ? ' <span class="uv" title="첨부 미확인: 수집 당시 KIND·DART 모두 접속이 안 돼 PDF·한글·워드 첨부를 아직 확인하지 못했어요 (다음 실행 때 자동 재확인 → 첨부 없으면 목록에서 빠짐)">⚠ 첨부 미확인</span>' : ''}</td>
       <td class="num cap">${r.cap ? `<b>${r.capTxt}</b><small title="${esc(r.capSrc)} · 상장주식수 ${r.shares ? r.shares.toLocaleString() + '주' : '-'}">${r.target === false ? '대상 외' : r.capDt + ' 종가' + (r.final ? '' : ' · ' + (r.capSrc.startsWith('한투') ? '잠정' : '추정'))}</small>` : '<span class="muted">확인 중</span>'}</td>
       <td class="num hide-m">${r.close ? r.close.toLocaleString() : '-'}</td>
@@ -381,7 +419,7 @@ function render() {
       + (p.reject ? `<small class="pubinfo">${esc(rejLabel(p))} ${esc((p.reject_date || '').slice(2).replace(/-/g, '.'))} ${esc(p.reject_by || '')}</small>` : '') + `</label>`
       + (p.reject ? `<button class="rjnote" data-rj="${esc(r.code)}" data-name="${esc(r.name)}" title="${esc(p.reject_reason || '사유 없음 — 눌러서 적기')}">${p.reject_reason ? '💬 ' + esc(p.reject_reason) : '＋ 사유 적기'}</button>` : '')}</td>
       <td>${out ? '' : `<span class="pill ${STC[st]}" ${p.reject ? `title="${esc(rejLabel(p) + ' · ' + (p.reject_reason || ''))}"` : ''}>${st}</span>`}</td>
-      <td style="white-space:nowrap">${!out && st !== DONE() ? `<button class="xbtn dfb" data-df="${esc(r.id)}" data-name="${esc(r.name)}" title="이 보고서를 다음 해로 이월 (사유 필수)">↷</button>` : ''}${ex ? `<button class="xbtn rs" data-r="${esc(r.id)}" data-name="${esc(r.name)}">↩ 복원</button>`
+      <td style="white-space:nowrap">${tk && !out && tk.stage !== 'done' ? `<button class="xbtn dfb" data-df="${esc(tk.key)}" data-name="${esc(r.name)}" title="이 보고서를 다음 해로 이월 (사유 필수)">↷</button>` : ''}${ex ? `<button class="xbtn rs" data-r="${esc(r.id)}" data-name="${esc(r.name)}">↩ 복원</button>`
         : `<button class="xbtn" data-x="${esc(r.id)}" data-name="${esc(r.name)}" title="이 공시를 작성 대상에서 제외 (언제든 복원 가능)">✕</button>`}</td></tr>`;
   }
   document.getElementById('tb').innerHTML = h || `<tr><td colspan="10" class="muted" style="text-align:center;padding:40px">${S.year ? S.year + '년에 작성할 보고서 중' : (dots(S.from) || '처음') + ' ~ ' + dots(S.to) + ' 기간에'} 조건에 맞는 공시가 없습니다.</td></tr>`;
@@ -434,6 +472,7 @@ async function setExclude(el, on) {
 }
 document.addEventListener('click', e => { const el = e.target.closest('button'); if (!el) return;
   if (el.id === 'auth') { connect(); return; }
+  if (el.id === 'addold') { addOld(); return; }
   if (el.dataset.x) { setExclude(el, true); return; }
   if (el.dataset.r) { setExclude(el, false); return; }
   if (/^(pm|rj|df)-/.test(el.id)) return;
@@ -452,7 +491,7 @@ document.addEventListener('click', e => { const el = e.target.closest('button');
       '발간 상태': other(r) ? '다른 팀 종목' : isEx(r) ? '제외' + (STATE.exclude[r.id].reason ? ' (' + STATE.exclude[r.id].reason + ')' : '') : r.target === false ? '작성 대상 아님' : statusOf(r.code),
       '계획 발간일': p.plan ? (p.plan_date || '') : '', '계획 발간인': p.plan ? (p.plan_by || '') : '',
       '이행 발간일': p.impl ? (p.impl_date || '') : '', '이행 발간인': p.impl ? (p.impl_by || '') : '',
-      '작성 연도': workYear(r), '이월 사유': (STATE.defer[r.id] || {}).reason || '', '보고서 상태': r.target === false || other(r) ? '' : taskStatus(r),
+      ...(S.year ? (t => ({'작성 연도': t ? t.year : '', '작성할 보고서': t ? ({plan: '계획', impl: '이행', done: '완료'})[t.stage] : '', '이월 사유': t && t.defer ? t.defer.reason : ''}))(taskOf(r)) : {}),
       '거절 구분': rejLabel(p), '거절 사유': p.reject ? (p.reject_reason || '') : '', '거절일': p.reject ? (p.reject_date || '') : '', '거절 작성자': p.reject ? (p.reject_by || '') : ''}; }));
     ws['!cols'] = [{wch: 11}, {wch: 18}, {wch: 9}, {wch: 15}, {wch: 14}, {wch: 13}, {wch: 11}, {wch: 10}, {wch: 11}, {wch: 10}, {wch: 9}, {wch: 30}, {wch: 10}, {wch: 9}, {wch: 40}, {wch: 11}, {wch: 10}]; const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '밸류업 현황');
     XLSX.writeFile(wb, S.year ? `밸류업_${S.year}년_작성대상.xlsx` : `밸류업_현황_${S.from || '전체'}-${S.to}.xlsx`); return; }

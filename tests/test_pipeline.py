@@ -551,20 +551,27 @@ def test_reject_reason_in_excel(env, tmp_path, monkeypatch):
     assert row["발간 상태"] == "발간 거절" and row["거절 구분"] == "이행 거절" and row["거절 사유"] == "이행은 미팅 일정 불가"
 
 
-def test_defer_work_year(env, tmp_path, monkeypatch):
-    import io
-    import pandas as pd
-    from app import pubsync, site
+
+def test_manual_addition_old_filing(env, tmp_path, monkeypatch):
+    """사이트에서 '과거 공시 추가' → 그 회사 밸류업 공시를 DART에서 기간 제한 없이 찾아 등록"""
+    from app import config, dart, pubsync
     w, db, sent = env
     monkeypatch.setattr(pubsync, "PATH", tmp_path / "p.json")
-    w.poll_kind(days=1)
-    w.compute_caps()
-    a = db.list_filings(days=0, limit=5)[0]
-    assert pubsync.work_year(a["acptno"], a["rcept_dt"]) == int(a["rcept_dt"][:4])
-    st = pubsync.state()
-    st["defer"][a["acptno"]] = {"year": 2027, "reason": "12월 공시라 연내 작성 불가"}
-    pubsync._save_state(st)
-    assert pubsync.work_year(a["acptno"], a["rcept_dt"]) == 2027
-    df = pd.read_excel(io.BytesIO(site.status_xlsx(3650)))
-    row = df[df["종목명"] == a["corp_name"]].iloc[0]
-    assert row["작성 연도"] == 2027 and row["이월 사유"] == "12월 공시라 연내 작성 불가"
+    monkeypatch.setattr(config, "DART_API_KEY", "k")
+    monkeypatch.setattr(w, "refresh_corp_map", lambda force=False: None)
+    calls = []
+    def fake_list(bgn, end, session=None, corp_code=None):
+        calls.append((bgn, corp_code))
+        return [{"rcept_no": "20260930900281", "corp_code": corp_code, "corp_name": "지투파워", "stock_code": "388050",
+                 "market": "코스닥", "report_nm": "기업가치제고계획(자율공시)", "rcept_dt": "20260930"}]
+    monkeypatch.setattr(dart, "fetch_list", fake_list)
+    st = pubsync.state(); st["add"]["지투파워"] = {"query": "지투파워", "by": "홍소현"}
+    st["add"]["없는회사"] = {"query": "없는회사"}; pubsync._save_state(st)
+    assert w.process_additions() == 1
+    assert calls == [("20240501", "01586767")]
+    f = db.get_filing("20260930000281")
+    assert f["valid"] == 1 and f["digest_at"] == "silent(backfill)"        # 알림 없이 적재
+    add = pubsync.state()["add"]
+    assert add["지투파워"]["done"] and "1건 새로 추가" in add["지투파워"]["result"]
+    assert add["없는회사"]["done"] and "찾지 못함" in add["없는회사"]["result"]
+    assert w.process_additions() == 0                                       # 한 번만 처리

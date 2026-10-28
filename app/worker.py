@@ -188,6 +188,15 @@ class Worker:
         db.set_meta("last_update", db.now())
         return n
 
+    def _register_dart(self, it, silent=False):
+        return self.register({
+            "acptno": dart.to_kind_acptno(it["rcept_no"]),
+            "rcept_no": it["rcept_no"], "corp_code": it.get("corp_code"),
+            "corp_name": it["corp_name"], "stock_code": it.get("stock_code"),
+            "market": it.get("market"), "report_nm": it["report_nm"],
+            "rcept_dt": it.get("rcept_dt"), "source": "dart",
+        }, silent=silent)
+
     def poll_dart(self, days=0, silent=False):
         if not config.DART_API_KEY:
             return 0
@@ -196,15 +205,41 @@ class Worker:
         items = dart.fetch_list(fr.strftime("%Y%m%d"), to.strftime("%Y%m%d"))
         n = 0
         for it in reversed(items):
-            n += self.register({
-                "acptno": dart.to_kind_acptno(it["rcept_no"]),
-                "rcept_no": it["rcept_no"], "corp_code": it.get("corp_code"),
-                "corp_name": it["corp_name"], "stock_code": it.get("stock_code"),
-                "market": it.get("market"), "report_nm": it["report_nm"],
-                "rcept_dt": it.get("rcept_dt"), "source": "dart",
-            }, silent=silent)
+            n += self._register_dart(it, silent=silent)
         self.status["last_dart"] = db.now()
         return n
+
+    def process_additions(self) -> int:
+        """사이트 '＋ 과거 공시 추가' 요청 처리: 회사의 밸류업 공시를 처음(2024.5)부터 DART에서 찾아 등록 (알림 없음)"""
+        from . import pubsync
+        st = pubsync.state()
+        todo = {k: v for k, v in st["add"].items() if not v.get("done")}
+        if not todo or not config.DART_API_KEY:
+            return 0
+        self.refresh_corp_map()
+        total = 0
+        for key, v in todo.items():
+            q = (v.get("query") or key).strip()
+            if re.fullmatch(r"\d{6}", q):
+                hit = next((c for c in self.corp_map.values() if c.get("stock_code") == q), None)
+            else:
+                hit = self.lookup(q)
+            if not hit:
+                v.update(done=True, result="회사를 찾지 못함 (종목명·코드 확인)", done_at=db.now())
+                continue
+            try:
+                items = dart.fetch_list("20240501", datetime.now().strftime("%Y%m%d"), corp_code=hit["corp_code"])
+            except Exception as e:  # noqa: BLE001
+                v.update(result=f"DART 조회 실패 — 다음 실행 때 다시 시도 ({str(e)[:80]})")
+                continue
+            n = sum(self._register_dart(it, silent=True) for it in reversed(items))
+            total += n
+            v.update(done=True, name=hit["corp_name"], done_at=db.now(),
+                     result=f"밸류업 공시 {len(items)}건 확인 · {n}건 새로 추가")
+            log.info("과거 공시 추가 %s: %s", hit["corp_name"], v["result"])
+        st["add"].update(todo)
+        pubsync._save_state(st)
+        return total
 
     def recheck_pending(self):
         for f in db.pending_checks(config.RECHECK_HOURS):
@@ -350,6 +385,7 @@ class Worker:
         self.sync_coverage()
         pubsync.pull()                             # 사이트에서 한 발간 체크 반영
         telegram.process_updates_once()            # 텔레그램 발간 체크 버튼/명령 반영
+        self.process_additions()                   # 사이트에서 요청한 과거 공시 추가
         try:
             self.poll_kind(days=4)
             self.kind_ok = True

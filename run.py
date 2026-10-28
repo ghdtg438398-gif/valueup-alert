@@ -59,6 +59,12 @@ def main():
         from app import pubsync, site
         w.sync_coverage()
         pubsync.pull()
+        try:
+            if w.process_additions():          # 과거 공시 추가 요청이 있으면 바로 불러오기
+                w.compute_caps()
+        except Exception as e:  # noqa: BLE001
+            print("과거 공시 추가 실패:", e)
+        pubsync.push()
         db.set_meta("state_update", db.now())
         site.build()
         print("사이트 갱신 완료")
