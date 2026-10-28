@@ -156,10 +156,10 @@
    "plan": true,
    "impl": false,
    "by": "홍소현",
-   "at": "2026-10-28 10:17:59",
+   "at": "2026-10-28 10:18:03",
    "plan_date": "2026-01-21",
    "plan_by": "이원재",
-   "reject": true
+   "reject": false
   },
   "079960": {
    "plan": false,
