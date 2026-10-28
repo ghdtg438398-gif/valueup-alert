@@ -18,6 +18,14 @@
    "impl_date": "2026-05-14",
    "impl_by": "이원재"
   },
+  "155650": {
+   "plan": true,
+   "impl": false,
+   "by": "홍소현",
+   "at": "2026-10-28 10:15:46",
+   "plan_date": "2026-10-20",
+   "plan_by": "오정하"
+  },
   "189690": {
    "plan": true,
    "impl": false,
