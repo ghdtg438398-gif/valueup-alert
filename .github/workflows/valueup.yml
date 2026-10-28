@@ -2,9 +2,13 @@ name: 밸류업 공시 알림
 
 on:
   schedule:
+    # 영업일 09:00 / 15:35 KST (= 00:00 / 06:35 UTC). 공휴일은 프로그램이 알아서 건너뜀
+    # GitHub 예약 실행은 몇 분~수십 분 늦게 시작될 수 있음 (3시간 안이면 해당 회차로 발송)
     - cron: "0 0 * * 1-5"
     - cron: "35 6 * * 1-5"
+    # 18:00 KST: 장 마감 뒤 나온 공시의 당일 시총을 한투에서 받아 두기 (알림 없음)
     - cron: "0 9 * * 1-5"
+  # 사이트에서 발간 체크·담당 변경, 또는 커버리지 엑셀·설정 업로드 → 사이트만 바로 다시 만들기 (1~3분)
   push:
     paths:
       - "data/pub_status.json"
@@ -63,7 +67,15 @@ jobs:
         run: |
           git config user.name "valueup-bot"
           git config user.email "valueup-bot@users.noreply.github.com"
-          git add -f data/valueup.db data/pub_status.json docs 2>/dev/null || git add -f data/valueup.db docs
-          git commit -m "update $(date '+%Y-%m-%d %H:%M')" || echo "변경 없음"
-          git pull --rebase -X ours origin ${{ github.ref_name }}
-          git push
+          BR=${{ github.ref_name }}
+          for i in 1 2 3 4 5; do
+            git fetch -q origin $BR
+            # 저장소 최신 상태로 맞추되(실행 중 올린 파일·사이트 수정 보존) DB·사이트만 이번 실행 결과로
+            git reset -q --mixed origin/$BR
+            git show origin/$BR:data/pub_status.json > "$RUNNER_TEMP/remote_state.json" 2>/dev/null || echo '{}' > "$RUNNER_TEMP/remote_state.json"
+            python run.py --merge-state "$RUNNER_TEMP/remote_state.json"
+            git add -f data/valueup.db data/pub_status.json docs
+            git commit -q -m "update $(date '+%Y-%m-%d %H:%M')" || { echo "변경 없음"; break; }
+            git push -q origin HEAD:$BR && break
+            echo "다른 저장과 겹침 → 다시 시도 ($i)"; sleep 3
+          done
