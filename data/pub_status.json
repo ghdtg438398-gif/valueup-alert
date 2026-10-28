@@ -166,7 +166,11 @@
    "impl": false,
    "reject": true,
    "by": "홍소현",
-   "at": "2026-10-06 14:07:45"
+   "at": "2026-10-28 10:38:31",
+   "reject_stage": "plan",
+   "reject_reason": "미팅 여력 없음",
+   "reject_date": "2026-09-30",
+   "reject_by": "김선호"
   },
   "018470": {
    "plan": true,
