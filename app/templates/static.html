@@ -305,7 +305,7 @@ function statusOf(code) { const p = STATE.pub[code] || {};
 
 // ---- 작성 연도: 종목 단위 '지금 써야 할 보고서' ----
 //  계획 미발간 → 계획 공시 연도에 '계획 보고서'
-//  계획 발간  → 다음 해로 넘어가 '이행 보고서' (이행 공시가 더 늦게 나오면 그 해로 자동 이동)
+//  계획 발간  → 무조건 다음 해로 넘어가 '이행 보고서' (같은 해에 이행 공시가 나와도 다음 해, 이행 공시가 더 늦으면 그 해)
 //  둘 다 발간 → 이행 발간한 해에 '발간 완료'
 //  이월하면 그 해로 (종목·단계별, 사유 필수)
 const yr = x => x ? +String(x).slice(0, 4) : 0;
@@ -323,7 +323,7 @@ function tasks() { if (TASKS) return TASKS;
     const planYear = yr(p.plan_date) || yr((planF || fs[0]).dt);
     let stage, row, natural;
     if (p.plan && p.impl) { stage = 'done'; row = implF || planF; natural = yr(p.impl_date) || yr(row.dt); }
-    else if (p.plan) { stage = 'impl'; row = implF || planF; natural = implF ? Math.max(yr(implF.dt), planYear) : planYear + 1; }
+    else if (p.plan) { stage = 'impl'; row = implF || planF; natural = Math.max(planYear + 1, implF ? yr(implF.dt) : 0); }   // 계획 발간한 다음 해 (이행 공시가 더 늦으면 그 해)
     else { stage = 'plan'; row = planF || fs[fs.length - 1]; natural = yr(row.dt); }
     const key = code + ':' + stage;
     const legacy = fs.map(f => f.id).filter(id => STATE.defer[id]);          // 예전 방식(공시별) 이월 기록
@@ -354,7 +354,7 @@ function byAnalyst(b) { if (S.analyst === '__defer__') return deferredOut();
   : S.analyst ? b.filter(r => analystsOf(r).includes(S.analyst)) : b.filter(r => !outside(r) && !other(r)); }
 const isPerson = a => a && !a.startsWith('__');
 function view() { let b = byAnalyst(base());
-  if (S.hideDone && isPerson(S.analyst)) b = b.filter(r => stOf(r) !== DONE());
+  if (S.hideDone) b = b.filter(r => stOf(r) !== DONE());
   return ((!S.analyst || S.year) && S.status) ? b.filter(r => r.target !== false && !other(r) && stOf(r) === S.status) : b; }
 function assignCell(r) {
   const cur = analystsOf(r); const ov = STATE.assign[r.code] && STATE.assign[r.code].analyst;
@@ -390,7 +390,7 @@ function render() { TASKS = null;
     + (exRows().length || S.analyst === '__excl__' ? `<button class="chip ex ${S.analyst === '__excl__' ? 'on' : ''}" data-a="__excl__" title="작성 대상에서 뺀 공시 — 여기서 복원">제외됨<em>${exRows().length}</em></button>` : '');
   const adds = Object.entries(STATE.add || {}); const an = document.getElementById('addnote'); an.hidden = !adds.length;
   an.innerHTML = '과거 공시 추가: ' + adds.map(([k, v]) => `<b>${esc(v.name || v.query || k)}</b> ${v.done ? '— ' + esc(v.result || '완료') : '— 불러오는 중 (1~3분, 예약 실행만 있으면 다음 실행 때)'}`).join(' · ');
-  const hd = document.getElementById('hidedone'); hd.hidden = !isPerson(S.analyst);
+  const hd = document.getElementById('hidedone'); hd.hidden = false;
   document.getElementById('hdsw').className = 'sw' + (S.hideDone ? ' on' : '');
   // 발간 상태별 칸 (전체 탭 / 연도별 보기에서는 위원님 탭에도)
   const sb = document.getElementById('stbar');
