@@ -162,17 +162,15 @@
    "reject": false
   },
   "079960": {
-   "plan": true,
+   "plan": false,
    "impl": false,
    "reject": true,
    "by": "홍소현",
-   "at": "2026-10-28 11:28:48",
+   "at": "2026-10-28 11:28:53",
    "reject_stage": "plan",
    "reject_reason": "미팅 여력 없음",
    "reject_date": "2026-09-30",
-   "reject_by": "김선호",
-   "plan_date": "2026-10-28",
-   "plan_by": "김선호"
+   "reject_by": "김선호"
   },
   "018470": {
    "plan": true,
