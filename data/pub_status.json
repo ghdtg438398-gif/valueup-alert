@@ -56,7 +56,11 @@
    "impl": false,
    "reject": true,
    "by": "김지은",
-   "at": "2026-10-06 12:47:37"
+   "at": "2026-10-28 11:33:08",
+   "reject_stage": "plan",
+   "reject_reason": "미팅 여력 없음",
+   "reject_date": "2026-10-28",
+   "reject_by": "박성순"
   },
   "234300": {
    "plan": true,
