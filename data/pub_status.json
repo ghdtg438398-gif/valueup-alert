@@ -120,7 +120,11 @@
    "impl": false,
    "reject": true,
    "by": "김지은",
-   "at": "2026-10-06 12:47:42"
+   "at": "2026-10-28 11:34:38",
+   "reject_stage": "plan",
+   "reject_reason": "공유 가능 내용 부족",
+   "reject_date": "2026-10-02",
+   "reject_by": "박성순"
   },
   "090850": {
    "plan": true,
