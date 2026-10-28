@@ -52,7 +52,7 @@ tr.out td{color:var(--muted)}tr.out .pill{opacity:.5}
 .st-todo{background:#fdf3d7;color:#9a6700}.st-done{background:var(--ok-soft);color:var(--ok)}
 .st-rej{background:var(--line);color:var(--muted)}.ck.rej{color:var(--muted)}.ck.rej input{accent-color:#6b6f78}
 .asg{font-size:12.5px;position:relative;white-space:nowrap}
-.tm{font-size:11.5px;color:var(--muted)}.tm.unk{background:#fdf3d7;color:#9a6700;border-radius:99px;padding:1px 7px;font-weight:700}.asg small{color:var(--muted)}
+.tm{font-size:11.5px;color:var(--muted)}.tm.ot{background:var(--line);border-radius:99px;padding:1px 7px;font-weight:700}.tm.unk{background:#fdf3d7;color:#9a6700;border-radius:99px;padding:1px 7px;font-weight:700}.asg small{color:var(--muted)}
 .asg select.as{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
 .asg:hover .who{text-decoration:underline dotted}
 .range{display:flex;align-items:center;gap:4px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:3px 6px}
@@ -63,6 +63,14 @@ tr.out td{color:var(--muted)}tr.out .pill{opacity:.5}
 .modal[hidden]{display:none}
 .modal .box{background:var(--panel);border-radius:12px;padding:20px;width:320px;display:grid;gap:10px}
 .modal label{font-size:12px;color:var(--muted);font-weight:600;display:grid;gap:4px}
+.modal textarea{font:14px Pretendard,sans-serif;padding:7px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);resize:vertical}
+.rjnote{display:block;max-width:220px;margin-top:3px;border:1px dashed var(--line);background:none;border-radius:6px;padding:3px 7px;font:500 11.5px Pretendard,sans-serif;color:var(--muted);text-align:left;cursor:pointer;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal;line-height:1.4}
+.rjnote:hover{border-color:var(--muted);color:var(--ink)}
+.seg.yr{align-items:center}.seg.yr .lbl{font-size:11.5px;color:var(--muted);font-weight:700;padding:0 8px 0 10px}
+.range.dim{opacity:.4}
+.dfnote{display:block;max-width:260px;margin-top:3px;border:0;background:var(--pu-soft);color:var(--pu);border-radius:6px;padding:2px 7px;font:500 11.5px Pretendard,sans-serif;text-align:left;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.xbtn.dfb{color:var(--pu)}
+.tog.sm{padding:6px 10px;font-size:12.5px}
 .modal input,.modal select{font:14px Pretendard,sans-serif;padding:7px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink)}
 .modal .row{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--panel);padding:9px 16px;border-radius:8px;font-size:13px;opacity:0;transition:.2s;pointer-events:none}
@@ -81,13 +89,14 @@ tr.out td{color:var(--muted)}tr.out .pill{opacity:.5}
     <div class="kpi" id="kpi"></div>
     <div class="ctrl">
       <button class="tog" id="tog"><span class="sw on" id="sw"></span>작성 대상만 <span class="muted" style="font-weight:500" id="range"></span></button>
+      <div class="seg yr" id="years" title="그 해에 써야 하는 보고서 (공시 연도 기준, 이월하면 다음 해로)"></div>
       <div class="seg" id="periods"></div>
       <div class="range"><input type="date" id="dfrom"><span>~</span><input type="date" id="dto"></div>
     </div>
   </div>
   <div class="card">
     <div class="chips"><span id="chips" style="display:contents"></span>
-      <div class="right"><div class="seg" id="types"></div><button class="btn" id="xls">⬇ 엑셀</button></div></div>
+      <div class="right"><button class="tog sm" id="hidedone" hidden><span class="sw" id="hdsw"></span>발간 완료 숨기기</button><div class="seg" id="types"></div><button class="btn" id="xls">⬇ 엑셀</button></div></div>
     <div class="stbar" id="stbar"></div>
     <div class="tw"><table>
       <thead><tr><th>시각</th><th>종목</th><th>공시 구분</th><th class="num">발표일 시총</th><th class="num hide-m">종가</th><th class="hide-m">핵심</th><th>담당</th><th>발간 체크</th><th>상태</th><th></th></tr></thead>
@@ -101,12 +110,29 @@ tr.out td{color:var(--muted)}tr.out .pill{opacity:.5}
   <label>발간인<input id="pm-by" list="pm-names" placeholder="이름"><datalist id="pm-names"></datalist></label>
   <div class="row"><button class="btn" id="pm-cancel">취소</button><button class="btn" id="pm-ok" style="background:var(--ink);color:var(--panel)">저장</button></div>
 </div></div>
+<div class="modal" id="defmodal" hidden><div class="box">
+  <b id="df-title"></b>
+  <span class="muted" id="df-sub" style="font-size:12px"></span>
+  <label>작성 연도 변경<select id="df-year"></select></label>
+  <label>이월 사유<textarea id="df-reason" rows="4" placeholder="예: 12월 계획 공시라 연내 작성 불가, 2027년 1분기 작성 예정"></textarea></label>
+  <label>작성자<input id="df-by" list="pm-names" placeholder="이름"></label>
+  <div class="row"><button class="btn" id="df-off" style="margin-right:auto;color:var(--accent)" hidden>이월 취소</button><button class="btn" id="df-cancel">닫기</button><button class="btn" id="df-ok" style="background:var(--ink);color:var(--panel)">저장</button></div>
+</div></div>
+<div class="modal" id="rejmodal" hidden><div class="box">
+  <b id="rj-title"></b>
+  <label>거절 구분<select id="rj-stage"><option value="plan">계획 발간 거절</option><option value="impl">이행 발간 거절</option></select></label>
+  <label>사유<textarea id="rj-reason" rows="4" placeholder="예: 계획 발간은 완료, 이행은 회사 일정상 미팅 불가로 거절"></textarea></label>
+  <label>날짜<input type="date" id="rj-date"></label>
+  <label>작성자<input id="rj-by" list="pm-names" placeholder="이름"></label>
+  <div class="row"><button class="btn" id="rj-off" style="margin-right:auto;color:var(--accent)" hidden>거절 취소</button><button class="btn" id="rj-cancel">닫기</button><button class="btn" id="rj-ok" style="background:var(--ink);color:var(--panel)">저장</button></div>
+</div></div>
 <script>
 let D = {{ data_json|safe }};
-const S = {period: 'today', from: '', to: '', analyst: '', type: '', target: true, status: ''};
+const S = {period: 'today', from: '', to: '', analyst: '', type: '', target: true, status: '', hideDone: false, year: ''};
 const P = {today: '오늘', week: '이번 주', month: '최근 30일', year: '1년', all: '전체'};
 const ST = ['미발간', '이행 미공시', '이행 미발간', '발간 완료', '발간 거절'];
-const STC = {'미발간': 'st-no', '이행 미공시': 'st-wait', '이행 미발간': 'st-todo', '발간 완료': 'st-done', '발간 거절': 'st-rej'};
+const STY = ['미작성', '작성 완료', '발간 거절'];          // 연도별 보기: 공시 1건 = 보고서 1건
+const STC = {'미작성': 'st-no', '작성 완료': 'st-done', '미발간': 'st-no', '이행 미공시': 'st-wait', '이행 미발간': 'st-todo', '발간 완료': 'st-done', '발간 거절': 'st-rej'};
 const W = '일월화수목금토';
 const ymd = d => d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
 const td = new Date(+D.today.slice(0,4), +D.today.slice(4,6) - 1, +D.today.slice(6));
@@ -123,7 +149,7 @@ const LSset = (k, v) => { try { v ? localStorage.setItem(k, v) : localStorage.re
 let T = LS('vu_token'); let REPO = LS('vu_repo') || D.repo; let WHO = LS('vu_who') || '';
 let STATE = norm(D.state);
 const FILE = 'data/pub_status.json';
-function norm(x) { x = x || {}; return {pub: x.pub || {}, assign: x.assign || {}, exclude: x.exclude || {}}; }
+function norm(x) { x = x || {}; return {pub: x.pub || {}, assign: x.assign || {}, exclude: x.exclude || {}, defer: x.defer || {}}; }
 const isEx = r => !!STATE.exclude[r.id];
 const gh = (path, opt = {}) => fetch(`https://api.github.com/repos/${REPO}/contents/${path}`, {...opt,
   headers: {'Authorization': 'Bearer ' + T, 'Accept': 'application/vnd.github+json', ...(opt.headers || {})}});
@@ -187,6 +213,75 @@ function askPub(name, f, code) {
   });
 }
 
+// ---- 발간 거절: 구분·사유·날짜·작성자 ----
+// 반환: {stage, reason, date, by} 저장 / 'off' 거절 취소 / null 닫기
+function askReject(name, code) {
+  return new Promise(res => {
+    const m = document.getElementById('rejmodal'), p = STATE.pub[code] || {};
+    document.getElementById('rj-title').textContent = `${name} · 발간 거절`;
+    document.getElementById('rj-stage').value = p.reject_stage || (p.plan ? 'impl' : 'plan');
+    document.getElementById('rj-reason').value = p.reject_reason || '';
+    document.getElementById('rj-date').value = p.reject_date || new Date().toLocaleDateString('sv-SE');
+    const row = D.rows.find(r => r.code === code);
+    document.getElementById('rj-by').value = p.reject_by || (row ? analystsOf(row)[0] : '') || WHO;
+    document.getElementById('pm-names').innerHTML = (D.assignees || D.analysts).map(a => `<option value="${esc(a)}">`).join('');
+    const off = document.getElementById('rj-off'); off.hidden = !p.reject;
+    m.hidden = false; document.getElementById('rj-reason').focus();
+    const ok = document.getElementById('rj-ok'), cancel = document.getElementById('rj-cancel');
+    const done = v => { m.hidden = true; ok.onclick = cancel.onclick = off.onclick = null; res(v); };
+    ok.onclick = () => { const reason = document.getElementById('rj-reason').value.trim();
+      if (!reason) { alert('거절 사유를 적어주세요'); return; }
+      done({stage: document.getElementById('rj-stage').value, reason, date: document.getElementById('rj-date').value,
+            by: document.getElementById('rj-by').value.trim()}); };
+    cancel.onclick = () => done(null);
+    off.onclick = () => { if (confirm('발간 거절을 취소할까요? (적은 사유도 지워져요)')) done('off'); };
+  });
+}
+async function editReject(code, name) {
+  if (!T && !(await connect())) return;
+  const info = await askReject(name, code); if (!info) return;
+  try {
+    await saveState(d => { const c = d.pub[code] || {plan: false, impl: false}; c.by = WHO; c.at = now();
+      if (info === 'off') { c.reject = false; ['stage', 'reason', 'date', 'by'].forEach(k => delete c['reject_' + k]); }
+      else { c.reject = true; c.reject_stage = info.stage; c.reject_reason = info.reason; c.reject_date = info.date; c.reject_by = info.by; }
+      d.pub[code] = c; }, info === 'off' ? `발간 거절 취소: ${name}` : `발간 거절: ${name} (${info.stage === 'impl' ? '이행' : '계획'}) ${info.reason.slice(0, 40)}`);
+    toast(`${name}: ${statusOf(code)}`);
+  } catch (err) { alert('저장 실패: ' + err.message); }
+  render();
+}
+// ---- 다음 해로 이월: 연도 + 사유(필수) ----
+async function editDefer(id, name) {
+  const r = D.rows.find(x => x.id === id); if (!r) return;
+  if (!T && !(await connect())) return;
+  const m = document.getElementById('defmodal'), cur = STATE.defer[id] || {}, y0 = pubYear(r), wy = workYear(r);
+  document.getElementById('df-title').textContent = `${name} · 보고서 이월`;
+  document.getElementById('df-sub').textContent = `${dots(r.dt)} ${r.type} 공시 · 지금 작성 연도 ${wy}년`;
+  document.getElementById('df-year').innerHTML = [1, 2, 3].map(k => y0 + k).map(y => `<option value="${y}" ${(cur.year ? +cur.year : wy + 1) === y ? 'selected' : ''}>${y}년에 작성</option>`).join('');
+  document.getElementById('df-reason').value = cur.reason || '';
+  document.getElementById('df-by').value = cur.by || analystsOf(r)[0] || WHO;
+  document.getElementById('pm-names').innerHTML = (D.assignees || D.analysts).map(a => `<option value="${esc(a)}">`).join('');
+  const off = document.getElementById('df-off'); off.hidden = !cur.year;
+  m.hidden = false; document.getElementById('df-reason').focus();
+  const info = await new Promise(res => {
+    const ok = document.getElementById('df-ok'), cancel = document.getElementById('df-cancel');
+    const done = v => { m.hidden = true; ok.onclick = cancel.onclick = off.onclick = null; res(v); };
+    ok.onclick = () => { const reason = document.getElementById('df-reason').value.trim();
+      if (!reason) { alert('이월 사유를 적어주세요'); return; }
+      done({year: +document.getElementById('df-year').value, reason, by: document.getElementById('df-by').value.trim()}); };
+    cancel.onclick = () => done(null);
+    off.onclick = () => { if (confirm(`이월을 취소하고 ${y0}년 작성으로 되돌릴까요?`)) done('off'); };
+  });
+  if (!info) return;
+  try {
+    await saveState(d => { if (info === 'off') delete d.defer[id];
+      else d.defer[id] = {year: info.year, reason: info.reason, by: info.by || WHO, at: now(), name, from: y0}; },
+      info === 'off' ? `이월 취소: ${name}` : `보고서 이월: ${name} → ${info.year}년 (${info.reason.slice(0, 40)})`);
+    toast(info === 'off' ? `${name}: ${y0}년 작성으로 되돌렸어요` : `${name}: ${info.year}년 작성으로 넘겼어요`);
+  } catch (err) { alert('저장 실패: ' + err.message); }
+  render();
+}
+const rejLabel = p => p.reject ? (p.reject_stage === 'impl' ? '이행' : p.reject_stage === 'plan' ? '계획' : '') + ' 거절' : '';
+
 // ---- 종목 단위 판정 ----
 function analystsOf(r) { const a = STATE.assign[r.code]; if (a && a.analyst) return a.analyst === '-' ? [] : [a.analyst]; return r.baseAnalysts || r.analysts || []; }
 function implDisclosed(code) { return D.rows.some(x => x.code === code && x.type.startsWith('이행') && !isEx(x)); }
@@ -194,23 +289,43 @@ function statusOf(code) { const p = STATE.pub[code] || {};
   if (p.reject) return '발간 거절';
   if (!p.plan) return '미발간'; if (p.impl) return '발간 완료'; return implDisclosed(code) ? '이행 미발간' : '이행 미공시'; }
 
-function inPeriod() { const f = S.from || '00000000', t = S.to || '99999999'; return D.rows.filter(r => r.dt >= f && r.dt <= t); }
+// ---- 작성 연도: 기본은 공시 연도, 이월하면 그 해로 ----
+const pubYear = r => +r.dt.slice(0, 4);
+const workYear = r => +((STATE.defer[r.id] || {}).year || pubYear(r));
+function taskStatus(r) {   // 이 공시에 대한 보고서 (계획 공시 → 계획 보고서, 이행 공시 → 이행 보고서)
+  const p = STATE.pub[r.code] || {}; const stage = r.type.startsWith('이행') ? 'impl' : 'plan';
+  if (p.reject && (!p.reject_stage || p.reject_stage === stage)) return '발간 거절';
+  return p[stage] ? '작성 완료' : '미작성'; }
+const stOf = r => S.year ? taskStatus(r) : statusOf(r.code);
+const DONE = () => S.year ? '작성 완료' : '발간 완료';
+function yearList() { const ys = new Set(D.rows.map(pubYear)); Object.values(STATE.defer).forEach(v => v.year && ys.add(+v.year));
+  ys.add(td.getFullYear()); return [...ys].filter(y => y >= td.getFullYear() - 2).sort(); }
+function inPeriod() { if (S.year) return D.rows.filter(r => workYear(r) === S.year);
+  const f = S.from || '00000000', t = S.to || '99999999'; return D.rows.filter(r => r.dt >= f && r.dt <= t); }
+const deferredOut = () => D.rows.filter(r => S.year && pubYear(r) <= S.year && workYear(r) > S.year && !isEx(r)
+  && (!S.target || (r.target !== false && !other(r))));     // 이 해에서 다음 해로 넘긴 건
 const exRows = () => inPeriod().filter(isEx);                   // 제외한 공시 (기간 안)
 function base() {
-  return inPeriod().filter(r => !isEx(r) && (!S.target || r.target !== false)
+  return inPeriod().filter(r => !isEx(r) && (!S.target || (r.target !== false && !other(r)))
     && (!S.type || (S.type === '이행' ? r.type.startsWith('이행') : r.type !== '이행'))); }
 const unk = r => !analystsOf(r).length && !r.team;            // 산업구분 시트에 없는 종목
-const outside = r => !analystsOf(r).length && !!r.team;       // 1팀 종목인데 담당 없음
-function byAnalyst(b) { return S.analyst === '__excl__' ? exRows() : S.analyst === '__none__' ? b.filter(outside) : S.analyst === '__unk__' ? b.filter(unk)
-  : S.analyst ? b.filter(r => analystsOf(r).includes(S.analyst)) : b; }
-function view() { const b = byAnalyst(base());
-  return (!S.analyst && S.status) ? b.filter(r => r.target !== false && statusOf(r.code) === S.status) : b; }
+const MY = D.myTeam || '리서치1팀';
+const outside = r => !analystsOf(r).length && r.team === MY;  // 1팀 종목인데 담당 없음
+const other = r => !analystsOf(r).length && !!r.team && r.team !== MY;   // 다른 팀 종목 (작성 대상만 끄면 보임)
+const shortTeam = t => (t || '').replace('리서치', '');
+function byAnalyst(b) { if (S.analyst === '__defer__') return deferredOut();
+  return S.analyst === '__excl__' ? exRows() : S.analyst === '__other__' ? b.filter(other) : S.analyst === '__none__' ? b.filter(outside) : S.analyst === '__unk__' ? b.filter(unk)
+  : S.analyst ? b.filter(r => analystsOf(r).includes(S.analyst)) : b.filter(r => !outside(r) && !other(r)); }
+const isPerson = a => a && !a.startsWith('__');
+function view() { let b = byAnalyst(base());
+  if (S.hideDone && isPerson(S.analyst)) b = b.filter(r => stOf(r) !== DONE());
+  return ((!S.analyst || S.year) && S.status) ? b.filter(r => r.target !== false && !other(r) && stOf(r) === S.status) : b; }
 function assignCell(r) {
   const cur = analystsOf(r); const ov = STATE.assign[r.code] && STATE.assign[r.code].analyst;
   const opts = ['<option value="">엑셀 기준' + (r.baseAnalysts.length ? ' (' + esc(r.baseAnalysts.join(', ')) + ')' : '') + '</option>']
     .concat((D.assignees || D.analysts).map(a => `<option ${ov === a ? 'selected' : ''}>${esc(a)}</option>`))
     .concat([`<option value="-" ${ov === '-' ? 'selected' : ''}>커버리지 외</option>`]);
-  const none = r.team ? '<span class="tm">커버리지 외 · 1팀</span>' : '<span class="tm unk" title="커버리지 엑셀 산업구분 시트에 없는 종목 (신규상장 등)">미분류</span>';
+  const none = other(r) ? `<span class="tm ot">${esc(shortTeam(r.team))} 종목</span>` : r.team ? `<span class="tm">커버리지 외 · ${esc(shortTeam(MY))}</span>` : '<span class="tm unk" title="커버리지 엑셀 산업구분 시트에 없는 종목 (신규상장 등)">미분류</span>';
   return `<span class="who">${cur.length ? esc(cur.join(', ')) : none}${ov ? ' <small title="직접 지정">✎</small>' : ''}</span>
     <select class="as" data-code="${esc(r.code)}" data-name="${esc(r.name)}" title="담당 바꾸기">${opts.join('')}</select>`;
 }
@@ -222,58 +337,67 @@ function render() {
   document.getElementById('upd').textContent = (D.lastUpdate ? '공시 수집 ' + md(D.lastUpdate) : '') + (lastEdit ? ' · 체크 반영 ' + md(lastEdit) : '');
   const t = D.rows.filter(r => r.dt === D.today && !isEx(r));
   document.getElementById('kpi').innerHTML = `<small>오늘 신규 공시 · ${D.today.slice(4,6)}/${D.today.slice(6)}(${W[td.getDay()]})</small><b>${t.length}건</b>
-    <span>계획 ${t.filter(r => !r.type.startsWith('이행')).length} · 이행 ${t.filter(r => r.type.startsWith('이행')).length} · 작성 대상 ${t.filter(r => r.target !== false).length}건</span>`;
+    <span>계획 ${t.filter(r => !r.type.startsWith('이행')).length} · 이행 ${t.filter(r => r.type.startsWith('이행')).length} · 작성 대상 ${t.filter(r => r.target !== false && !other(r)).length}건</span>`;
   document.getElementById('range').textContent = `발표일 시총 ${D.capMin.toLocaleString()}억~${D.capMax.toLocaleString()}억`;
   document.getElementById('sw').className = 'sw' + (S.target ? ' on' : '');
-  document.getElementById('periods').innerHTML = Object.entries(P).map(([k, v]) => `<button class="${S.period === k ? 'on' : ''}" data-p="${k}">${v}</button>`).join('');
+  document.getElementById('years').innerHTML = '<span class="lbl">작성 연도</span>' + yearList().map(y => `<button class="${S.year === y ? 'on' : ''}" data-y="${y}">${y}</button>`).join('');
+  document.getElementById('periods').innerHTML = Object.entries(P).map(([k, v]) => `<button class="${!S.year && S.period === k ? 'on' : ''}" data-p="${k}">${v}</button>`).join('');
+  document.querySelector('.range').classList.toggle('dim', !!S.year);
   document.getElementById('dfrom').value = iso(S.from); document.getElementById('dto').value = iso(S.to);
   document.getElementById('types').innerHTML = [['', '계획·이행'], ['계획', '계획'], ['이행', '이행']].map(([k, v]) => `<button class="${S.type === k ? 'on' : ''}" data-t="${k}">${v}</button>`).join('');
   const b = base();
   const chip = (k, label, n) => `<button class="chip ${S.analyst === k ? 'on' : ''}" data-a="${esc(k)}">${esc(label)}<em>${n}</em></button>`;
-  document.getElementById('chips').innerHTML = chip('', '전체', b.length) + D.analysts.map(a => chip(a, a, b.filter(r => analystsOf(r).includes(a)).length)).join('')
-    + chip('__none__', '커버리지 외 (1팀)', b.filter(outside).length) + chip('__unk__', '미분류', b.filter(unk).length)
+  document.getElementById('chips').innerHTML = chip('', '전체', b.filter(r => !outside(r) && !other(r)).length) + D.analysts.map(a => chip(a, a, b.filter(r => analystsOf(r).includes(a)).length)).join('')
+    + chip('__none__', `커버리지 외 (${shortTeam(MY)})`, b.filter(outside).length) + chip('__unk__', '미분류', b.filter(unk).length)
+    + (!S.target || S.analyst === '__other__' ? chip('__other__', '다른 팀', b.filter(other).length) : '')
+    + (S.year && (deferredOut().length || S.analyst === '__defer__') ? `<button class="chip ex ${S.analyst === '__defer__' ? 'on' : ''}" data-a="__defer__" title="${S.year}년 공시 중 다음 해로 넘긴 보고서">${S.year + 1}년 이후로 이월<em>${deferredOut().length}</em></button>` : '')
     + (exRows().length || S.analyst === '__excl__' ? `<button class="chip ex ${S.analyst === '__excl__' ? 'on' : ''}" data-a="__excl__" title="작성 대상에서 뺀 공시 — 여기서 복원">제외됨<em>${exRows().length}</em></button>` : '');
-  // 발간 상태별 칸 (전체 탭에서만)
+  const hd = document.getElementById('hidedone'); hd.hidden = !isPerson(S.analyst);
+  document.getElementById('hdsw').className = 'sw' + (S.hideDone ? ' on' : '');
+  // 발간 상태별 칸 (전체 탭 / 연도별 보기에서는 위원님 탭에도)
   const sb = document.getElementById('stbar');
-  if (S.analyst) { sb.hidden = true; } else {
-    sb.hidden = false; const tg = b.filter(r => r.target !== false);
-    sb.innerHTML = '<span class="muted" style="font-size:12px;font-weight:600;margin-right:4px">발간 상태</span>'
+  if (S.analyst && !(S.year && isPerson(S.analyst) || S.year && S.analyst === '__none__')) { sb.hidden = true; } else {
+    sb.hidden = false; const tg = byAnalyst(b).filter(r => r.target !== false && !other(r));
+    sb.innerHTML = `<span class="muted" style="font-size:12px;font-weight:600;margin-right:4px">${S.year ? S.year + '년 작성할 보고서' : '발간 상태'}</span>`
       + `<button class="sbtn ${!S.status ? 'on' : ''}" data-s="">전체<em>${tg.length}</em></button>`
-      + ST.map(x => `<button class="sbtn ${STC[x]} ${S.status === x ? 'on' : ''}" data-s="${x}">${x}<em>${tg.filter(r => statusOf(r.code) === x).length}</em></button>`).join(''); }
+      + (S.year ? STY : ST).map(x => `<button class="sbtn ${STC[x]} ${S.status === x ? 'on' : ''}" data-s="${x}">${x}<em>${tg.filter(r => stOf(r) === x).length}</em></button>`).join(''); }
   const rows = view(); let day = ''; let h = '';
   for (const r of rows) {
-    if (S.period !== 'today' && r.dt !== day) { day = r.dt; const dd = new Date(+r.dt.slice(0,4), +r.dt.slice(4,6) - 1, +r.dt.slice(6));
+    if ((S.year || S.period !== 'today') && r.dt !== day) { day = r.dt; const dd = new Date(+r.dt.slice(0,4), +r.dt.slice(4,6) - 1, +r.dt.slice(6));
       h += `<tr class="day"><td colspan="10">${dots(r.dt)} (${W[dd.getDay()]})</td></tr>`; }
-    const ex = isEx(r); const out = r.target === false || ex; const p = STATE.pub[r.code] || {}; const st = statusOf(r.code);
-    const xi = STATE.exclude[r.id] || {};
+    const ex = isEx(r); const ot = other(r); const out = r.target === false || ex || ot; const p = STATE.pub[r.code] || {}; const st = stOf(r);
+    const xi = STATE.exclude[r.id] || {}; const df = STATE.defer[r.id];
     h += `<tr class="${out ? 'out' : ''}"><td class="muted">${r.time}</td>
-      <td class="co"><a href="${esc(r.url)}" target="_blank">${esc(r.name)}</a><small>${esc(r.code)} · ${esc(r.market)}</small>${ex ? `<small class="exinfo">제외 ${esc((xi.at || '').slice(5, 16).replace('-', '/'))} ${esc(xi.by || '')}${xi.reason ? ' · ' + esc(xi.reason) : ''}</small>` : ''}</td>
+      <td class="co"><a href="${esc(r.url)}" target="_blank">${esc(r.name)}</a><small>${esc(r.code)} · ${esc(r.market)}</small>${ex ? `<small class="exinfo">제외 ${esc((xi.at || '').slice(5, 16).replace('-', '/'))} ${esc(xi.by || '')}${xi.reason ? ' · ' + esc(xi.reason) : ''}</small>` : ''}${df ? `<button class="dfnote" data-df="${esc(r.id)}" data-name="${esc(r.name)}" title="${esc(df.reason || '')}">↷ ${pubYear(r)} 공시 → <b>${esc(df.year)}년 작성</b> · ${esc(df.reason || '')}</button>` : ''}</td>
       <td><span class="pill t-${esc(r.type)}">${esc(r.type)}</span>${r.corr ? ' <span class="pill st-todo" title="정정공시 — 정정 전 공시는 목록에서 대체됨">정정</span>' : ''}${r.unverified ? ' <span class="uv" title="첨부 미확인: 수집 당시 KIND·DART 모두 접속이 안 돼 PDF·한글·워드 첨부를 아직 확인하지 못했어요 (다음 실행 때 자동 재확인 → 첨부 없으면 목록에서 빠짐)">⚠ 첨부 미확인</span>' : ''}</td>
       <td class="num cap">${r.cap ? `<b>${r.capTxt}</b><small title="${esc(r.capSrc)} · 상장주식수 ${r.shares ? r.shares.toLocaleString() + '주' : '-'}">${r.target === false ? '대상 외' : r.capDt + ' 종가' + (r.final ? '' : ' · ' + (r.capSrc.startsWith('한투') ? '잠정' : '추정'))}</small>` : '<span class="muted">확인 중</span>'}</td>
       <td class="num hide-m">${r.close ? r.close.toLocaleString() : '-'}</td>
       <td class="key hide-m">${esc(r.key)}</td>
       <td class="asg">${assignCell(r)}</td>
-      <td>${out ? `<span class="muted" style="font-size:12px">${ex ? '제외됨' : '작성 대상 아님'}</span>` :
+      <td>${out ? `<span class="muted" style="font-size:12px">${ex ? '제외됨' : ot ? '다른 팀 종목' : '작성 대상 아님'}</span>` :
         ['plan', 'impl'].map(f => `<label class="ck" style="vertical-align:top"><input type="checkbox" data-code="${esc(r.code)}" data-name="${esc(r.name)}" data-f="${f}" ${p[f] ? 'checked' : ''}>${f === 'plan' ? '계획' : '이행'} 발간`
           + (p[f] && (p[f + '_date'] || p[f + '_by']) ? `<small class="pubinfo">${esc((p[f + '_date'] || '').slice(2).replace(/-/g, '.'))} ${esc(p[f + '_by'] || '')}</small>` : '') + `</label>`).join('')
-      + `<label class="ck rej"><input type="checkbox" data-code="${esc(r.code)}" data-name="${esc(r.name)}" data-f="reject" ${p.reject ? 'checked' : ''}>발간 거절</label>`}</td>
-      <td>${out ? '' : `<span class="pill ${STC[st]}">${st}</span>`}</td>
-      <td>${ex ? `<button class="xbtn rs" data-r="${esc(r.id)}" data-name="${esc(r.name)}">↩ 복원</button>`
+      + `<label class="ck rej" style="vertical-align:top"><input type="checkbox" data-code="${esc(r.code)}" data-name="${esc(r.name)}" data-f="reject" ${p.reject ? 'checked' : ''}>발간 거절`
+      + (p.reject ? `<small class="pubinfo">${esc(rejLabel(p))} ${esc((p.reject_date || '').slice(2).replace(/-/g, '.'))} ${esc(p.reject_by || '')}</small>` : '') + `</label>`
+      + (p.reject ? `<button class="rjnote" data-rj="${esc(r.code)}" data-name="${esc(r.name)}" title="${esc(p.reject_reason || '사유 없음 — 눌러서 적기')}">${p.reject_reason ? '💬 ' + esc(p.reject_reason) : '＋ 사유 적기'}</button>` : '')}</td>
+      <td>${out ? '' : `<span class="pill ${STC[st]}" ${p.reject ? `title="${esc(rejLabel(p) + ' · ' + (p.reject_reason || ''))}"` : ''}>${st}</span>`}</td>
+      <td style="white-space:nowrap">${!out && st !== DONE() ? `<button class="xbtn dfb" data-df="${esc(r.id)}" data-name="${esc(r.name)}" title="이 보고서를 다음 해로 이월 (사유 필수)">↷</button>` : ''}${ex ? `<button class="xbtn rs" data-r="${esc(r.id)}" data-name="${esc(r.name)}">↩ 복원</button>`
         : `<button class="xbtn" data-x="${esc(r.id)}" data-name="${esc(r.name)}" title="이 공시를 작성 대상에서 제외 (언제든 복원 가능)">✕</button>`}</td></tr>`;
   }
-  document.getElementById('tb').innerHTML = h || `<tr><td colspan="10" class="muted" style="text-align:center;padding:40px">${dots(S.from) || '처음'} ~ ${dots(S.to)} 기간에 조건에 맞는 공시가 없습니다.</td></tr>`;
+  document.getElementById('tb').innerHTML = h || `<tr><td colspan="10" class="muted" style="text-align:center;padding:40px">${S.year ? S.year + '년에 작성할 보고서 중' : (dots(S.from) || '처음') + ' ~ ' + dots(S.to) + ' 기간에'} 조건에 맞는 공시가 없습니다.</td></tr>`;
 }
 document.addEventListener('change', async e => {
   const el = e.target;
   if (el.id === 'dfrom' || el.id === 'dto') {
     const v = el.value.replace(/-/g, ''); if (el.id === 'dfrom') S.from = v; else S.to = v || D.today;
-    S.period = 'custom'; render(); return;
+    S.period = 'custom'; S.year = ''; render(); return;
   }
   if (el.matches('input[data-f]')) {
     const val = el.checked; el.checked = !val;          // 저장 성공 후 반영
     if (!T && !(await connect())) return;
     const f = el.dataset.f; let info = null;
-    if (val && f !== 'reject') { info = await askPub(el.dataset.name, f, el.dataset.code); if (!info) return; }
+    if (f === 'reject') { await editReject(el.dataset.code, el.dataset.name); return; }   // 거절은 사유 입력창으로
+    if (val) { info = await askPub(el.dataset.name, f, el.dataset.code); if (!info) return; }
     el.disabled = true;
     try {
       await saveState(d => { const c = d.pub[el.dataset.code] || {plan: false, impl: false};
@@ -312,20 +436,28 @@ document.addEventListener('click', e => { const el = e.target.closest('button');
   if (el.id === 'auth') { connect(); return; }
   if (el.dataset.x) { setExclude(el, true); return; }
   if (el.dataset.r) { setExclude(el, false); return; }
-  if (el.id === 'pm-ok' || el.id === 'pm-cancel') return;
-  if (el.id === 'tog') S.target = !S.target; else if (el.dataset.p) setPeriod(el.dataset.p);
+  if (/^(pm|rj|df)-/.test(el.id)) return;
+  if (el.id === 'hidedone') { S.hideDone = !S.hideDone; LSset('vu_hidedone', S.hideDone ? '1' : ''); }
+  else if (el.dataset.rj) { editReject(el.dataset.rj, el.dataset.name); return; }
+  else if (el.dataset.df) { editDefer(el.dataset.df, el.dataset.name); return; }
+  else if (el.dataset.y) { const y = +el.dataset.y; S.year = S.year === y ? '' : y; S.status = '';
+    if (S.analyst === '__defer__' && !S.year) S.analyst = ''; }
+  else if (el.id === 'tog') S.target = !S.target; else if (el.dataset.p) { S.year = ''; if (S.analyst === '__defer__') S.analyst = ''; setPeriod(el.dataset.p); }
   else if (el.dataset.s !== undefined) S.status = el.dataset.s;
   else if (el.dataset.t !== undefined) S.type = el.dataset.t;
   else if (el.dataset.a !== undefined) { S.analyst = el.dataset.a; if (S.analyst) S.status = ''; }
   else if (el.id === 'xls') { const ws = XLSX.utils.json_to_sheet(view().map(r => { const p = STATE.pub[r.code] || {}; return {
       '공시일': dots(r.dt), '종목명': r.name, '공시 구분': r.type,
-      '발표일 시총(억원)': r.cap ? Math.round(r.cap / 1e8) : null, '담당': analystsOf(r).join(', ') || (r.team ? '커버리지 외(1팀)' : '미분류'),
-      '발간 상태': isEx(r) ? '제외' + (STATE.exclude[r.id].reason ? ' (' + STATE.exclude[r.id].reason + ')' : '') : r.target === false ? '작성 대상 아님' : statusOf(r.code),
+      '발표일 시총(억원)': r.cap ? Math.round(r.cap / 1e8) : null, '담당': analystsOf(r).join(', ') || (other(r) ? shortTeam(r.team) + ' 종목' : r.team ? '커버리지 외(' + shortTeam(MY) + ')' : '미분류'),
+      '발간 상태': other(r) ? '다른 팀 종목' : isEx(r) ? '제외' + (STATE.exclude[r.id].reason ? ' (' + STATE.exclude[r.id].reason + ')' : '') : r.target === false ? '작성 대상 아님' : statusOf(r.code),
       '계획 발간일': p.plan ? (p.plan_date || '') : '', '계획 발간인': p.plan ? (p.plan_by || '') : '',
-      '이행 발간일': p.impl ? (p.impl_date || '') : '', '이행 발간인': p.impl ? (p.impl_by || '') : ''}; }));
-    ws['!cols'] = [{wch: 11}, {wch: 18}, {wch: 9}, {wch: 15}, {wch: 14}, {wch: 13}, {wch: 11}, {wch: 10}, {wch: 11}, {wch: 10}]; const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '밸류업 현황');
-    XLSX.writeFile(wb, `밸류업_현황_${S.from || '전체'}-${S.to}.xlsx`); return; }
+      '이행 발간일': p.impl ? (p.impl_date || '') : '', '이행 발간인': p.impl ? (p.impl_by || '') : '',
+      '작성 연도': workYear(r), '이월 사유': (STATE.defer[r.id] || {}).reason || '', '보고서 상태': r.target === false || other(r) ? '' : taskStatus(r),
+      '거절 구분': rejLabel(p), '거절 사유': p.reject ? (p.reject_reason || '') : '', '거절일': p.reject ? (p.reject_date || '') : '', '거절 작성자': p.reject ? (p.reject_by || '') : ''}; }));
+    ws['!cols'] = [{wch: 11}, {wch: 18}, {wch: 9}, {wch: 15}, {wch: 14}, {wch: 13}, {wch: 11}, {wch: 10}, {wch: 11}, {wch: 10}, {wch: 9}, {wch: 30}, {wch: 10}, {wch: 9}, {wch: 40}, {wch: 11}, {wch: 10}]; const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '밸류업 현황');
+    XLSX.writeFile(wb, S.year ? `밸류업_${S.year}년_작성대상.xlsx` : `밸류업_현황_${S.from || '전체'}-${S.to}.xlsx`); return; }
   render(); });
+S.hideDone = LS('vu_hidedone') === '1';
 setPeriod('today'); render(); refresh();
 </script>
 </body></html>

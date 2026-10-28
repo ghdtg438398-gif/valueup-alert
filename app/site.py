@@ -22,8 +22,8 @@ def rows_for_site(days=None) -> list[dict]:
     tmap = teamcfg.teams()
     exc = pubsync.state()["exclude"]
     for r in db.list_filings(since=since, limit=100000):
-        if not db.analysts_for(r["stock_code"]) and not teamcfg.visible_unassigned(r["stock_code"], tmap):
-            continue   # 담당 없는 다른 팀 종목은 제외
+        # 다른 팀 종목도 모두 넣고 표시 여부는 사이트에서 ('작성 대상만' 끄면 전체 공시가 보임)
+        other = not db.analysts_for(r["stock_code"]) and not teamcfg.visible_unassigned(r["stock_code"], tmap)
         out.append({
             "id": r["acptno"], "dt": r["rcept_dt"], "time": (r["disclosed_at"] or "")[11:16],
             "name": r["corp_name"], "code": r["stock_code"] or "", "market": r["market"] or "",
@@ -35,26 +35,36 @@ def rows_for_site(days=None) -> list[dict]:
             "pub": pubsync.company_status(r["stock_code"], implset),
             "url": telegram.kind_url(r["acptno"]), "corr": bool(r.get("is_correction")),
             "unverified": str(r.get("last_error") or "").startswith("첨부 미확인"),
-            "excluded": r["acptno"] in exc,
+            "excluded": r["acptno"] in exc, "otherTeam": other,
         })
     return out
 
 
+def _reject_cols(p: dict) -> dict:
+    if not p.get("reject"):
+        return {"거절 구분": "", "거절 사유": "", "거절일": ""}
+    stage = {"plan": "계획 거절", "impl": "이행 거절"}.get(p.get("reject_stage"), "거절")
+    return {"거절 구분": stage, "거절 사유": p.get("reject_reason", ""), "거절일": p.get("reject_date", "")}
+
+
 def status_xlsx(days=365) -> bytes:
-    rows = [r for r in rows_for_site(days) if r["target"] is not False and not r["excluded"]]
+    rows = [r for r in rows_for_site(days) if r["target"] is not False and not r["excluded"] and not r["otherTeam"]]
     pub = pubsync.state()["pub"]
-    cols = ["공시일", "종목명", "발표일 시총(억원)", "담당", "발간 상태", "계획 발간일", "계획 발간인", "이행 발간일", "이행 발간인"]
+    cols = ["공시일", "작성 연도", "이월 사유", "종목명", "발표일 시총(억원)", "담당", "발간 상태", "계획 발간일", "계획 발간인", "이행 발간일", "이행 발간인", "거절 구분", "거절 사유", "거절일"]
+    defer = pubsync.state()["defer"]
     df = pd.DataFrame([{"공시일": f"{r['dt'][:4]}.{r['dt'][4:6]}.{r['dt'][6:]}", "종목명": r["name"],
+                        "작성 연도": pubsync.work_year(r["id"], r["dt"]), "이월 사유": (defer.get(r["id"]) or {}).get("reason", ""),
                         "발표일 시총(억원)": round(r["cap"] / 1e8) if r["cap"] else None,
                         "담당": ", ".join(r["analysts"]) or ("커버리지 외(1팀)" if r["team"] else "미분류"), "발간 상태": r["pub"],
                         "계획 발간일": pub.get(r["code"], {}).get("plan_date", ""), "계획 발간인": pub.get(r["code"], {}).get("plan_by", ""),
-                        "이행 발간일": pub.get(r["code"], {}).get("impl_date", ""), "이행 발간인": pub.get(r["code"], {}).get("impl_by", "")}
+                        "이행 발간일": pub.get(r["code"], {}).get("impl_date", ""), "이행 발간인": pub.get(r["code"], {}).get("impl_by", ""),
+                        **_reject_cols(pub.get(r["code"], {}))}
                        for r in rows], columns=cols)
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as w:
         df.to_excel(w, index=False, sheet_name="밸류업 현황")
         ws = w.sheets["밸류업 현황"]
-        for col, width in zip("ABCDEFGHI", (12, 18, 16, 18, 14, 12, 10, 12, 10)):
+        for col, width in zip("ABCDEFGHIJKLMN", (12, 9, 30, 18, 16, 18, 14, 12, 10, 12, 10, 10, 40, 12)):
             ws.column_dimensions[col].width = width
     return buf.getvalue()
 
@@ -64,7 +74,7 @@ def build(out_dir: Path | None = None) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     env = Environment(loader=FileSystemLoader(str(Path(__file__).parent / "templates")), autoescape=True)
     st = teamcfg.settings()
-    data = {"rows": rows_for_site(), "analysts": st["tabs"] or db.analyst_names(), "assignees": teamcfg.assignees(),
+    data = {"rows": rows_for_site(), "analysts": st["tabs"] or db.analyst_names(), "myTeam": st["my_team"], "assignees": teamcfg.assignees(),
             "lastUpdate": db.get_meta("last_update") or "", "stateUpdate": db.get_meta("state_update") or "", "today": datetime.now().strftime("%Y%m%d"),
             "capMin": config.CAP_MIN_EOK, "capMax": config.CAP_MAX_EOK,
             "repo": os.getenv("GITHUB_REPOSITORY", ""), "branch": os.getenv("GITHUB_REF_NAME", "main"),

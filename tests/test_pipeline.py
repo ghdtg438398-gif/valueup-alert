@@ -531,3 +531,40 @@ def test_dart_fallback_when_kind_blocked(env):
     w.check("20260930001024"); w.check("20260930001024")
     f = db.get_filing("20260930001024")
     assert f["valid"] == 0 and not str(f["last_error"] or "").startswith("첨부 미확인")
+
+
+def test_reject_reason_in_excel(env, tmp_path, monkeypatch):
+    import io
+    import pandas as pd
+    from app import pubsync, site
+    w, db, sent = env
+    monkeypatch.setattr(pubsync, "PATH", tmp_path / "p.json")
+    w.kind.s.routes["acptno=20260930000835"] = fx("viewer.html")
+    w.poll_kind(days=1)
+    w.compute_caps()
+    st = pubsync.state()
+    st["pub"]["388050"] = {"plan": True, "reject": True, "reject_stage": "impl",
+                           "reject_reason": "이행은 미팅 일정 불가", "reject_date": "2026-10-27"}
+    pubsync._save_state(st)
+    df = pd.read_excel(io.BytesIO(site.status_xlsx(3650)))
+    row = df[df["종목명"] == "지투파워"].iloc[0]
+    assert row["발간 상태"] == "발간 거절" and row["거절 구분"] == "이행 거절" and row["거절 사유"] == "이행은 미팅 일정 불가"
+
+
+def test_defer_work_year(env, tmp_path, monkeypatch):
+    import io
+    import pandas as pd
+    from app import pubsync, site
+    w, db, sent = env
+    monkeypatch.setattr(pubsync, "PATH", tmp_path / "p.json")
+    w.poll_kind(days=1)
+    w.compute_caps()
+    a = db.list_filings(days=0, limit=5)[0]
+    assert pubsync.work_year(a["acptno"], a["rcept_dt"]) == int(a["rcept_dt"][:4])
+    st = pubsync.state()
+    st["defer"][a["acptno"]] = {"year": 2027, "reason": "12월 공시라 연내 작성 불가"}
+    pubsync._save_state(st)
+    assert pubsync.work_year(a["acptno"], a["rcept_dt"]) == 2027
+    df = pd.read_excel(io.BytesIO(site.status_xlsx(3650)))
+    row = df[df["종목명"] == a["corp_name"]].iloc[0]
+    assert row["작성 연도"] == 2027 and row["이월 사유"] == "12월 공시라 연내 작성 불가"
