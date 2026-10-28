@@ -388,8 +388,10 @@ function render() { TASKS = null;
     + chip('__other__', '다른 팀', b.filter(other).length)
     + (S.year && (deferredOut().length || S.analyst === '__defer__') ? `<button class="chip ex ${S.analyst === '__defer__' ? 'on' : ''}" data-a="__defer__" title="${S.year}년에 쓸 보고서 중 다음 해 이후로 넘긴 것">${S.year + 1}년 이후로 이월<em>${deferredOut().length}</em></button>` : '')
     + (exRows().length || S.analyst === '__excl__' ? `<button class="chip ex ${S.analyst === '__excl__' ? 'on' : ''}" data-a="__excl__" title="작성 대상에서 뺀 공시 — 여기서 복원">제외됨<em>${exRows().length}</em></button>` : '');
-  const adds = Object.entries(STATE.add || {}); const an = document.getElementById('addnote'); an.hidden = !adds.length;
-  an.innerHTML = '과거 공시 추가: ' + adds.map(([k, v]) => `<b>${esc(v.name || v.query || k)}</b> ${v.done ? '— ' + esc(v.result || '완료') : '— 불러오는 중 (1~3분, 예약 실행만 있으면 다음 실행 때)'}`).join(' · ');
+  const old = new Date(td); old.setDate(old.getDate() - 2); const oldS = old.toLocaleDateString('sv-SE');
+  const adds = Object.entries(STATE.add || {}).filter(([k, v]) => v && v.query && (!v.done || (v.done_at || '') >= oldS));
+  const an = document.getElementById('addnote'); an.hidden = !adds.length;
+  an.innerHTML = '과거 공시 추가: ' + adds.map(([k, v]) => `<b>${esc(v.name || v.query || k)}</b> ${v.done ? '— ' + esc(v.result || '완료') : '— 불러오는 중 (1~3분)'} <button class="xbtn" data-addx="${esc(k)}" title="목록에서 지우기">×</button>`).join(' · ');
   const hd = document.getElementById('hidedone'); hd.hidden = false;
   document.getElementById('hdsw').className = 'sw' + (S.hideDone ? ' on' : '');
   // 발간 상태별 칸 (전체 탭 / 연도별 보기에서는 위원님 탭에도)
@@ -473,6 +475,9 @@ async function setExclude(el, on) {
 document.addEventListener('click', e => { const el = e.target.closest('button'); if (!el) return;
   if (el.id === 'auth') { connect(); return; }
   if (el.id === 'addold') { addOld(); return; }
+  if (el.dataset.addx) { (async () => { if (!T && !(await connect())) return;
+    try { await saveState(d => { delete d.add[el.dataset.addx]; }, `과거 공시 추가 목록 정리: ${el.dataset.addx}`); } catch (err) { alert('저장 실패: ' + err.message); }
+    render(); })(); return; }
   if (el.dataset.x) { setExclude(el, true); return; }
   if (el.dataset.r) { setExclude(el, false); return; }
   if (/^(pm|rj|df)-/.test(el.id)) return;
@@ -496,7 +501,7 @@ document.addEventListener('click', e => { const el = e.target.closest('button');
     ws['!cols'] = [{wch: 11}, {wch: 18}, {wch: 9}, {wch: 15}, {wch: 14}, {wch: 13}, {wch: 11}, {wch: 10}, {wch: 11}, {wch: 10}, {wch: 9}, {wch: 30}, {wch: 10}, {wch: 9}, {wch: 40}, {wch: 11}, {wch: 10}]; const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '밸류업 현황');
     XLSX.writeFile(wb, S.year ? `밸류업_${S.year}년_작성대상.xlsx` : `밸류업_현황_${S.from || '전체'}-${S.to}.xlsx`); return; }
   render(); });
-S.hideDone = LS('vu_hidedone') === '1';
-setPeriod('today'); render(); refresh();
+// 처음 화면: 올해 작성 연도 · 전체 탭 · 발간 완료 숨기기
+setPeriod('today'); S.year = td.getFullYear(); S.hideDone = true; render(); refresh();
 </script>
 </body></html>

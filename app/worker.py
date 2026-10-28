@@ -250,6 +250,24 @@ class Worker:
                 continue
             self.check(f["acptno"])
 
+    def reclassify_once(self):
+        """(1회) 본문의 '이행평가' 칸 때문에 이행으로 잘못 분류된 공시를 제목·계획서 명칭·첨부명 기준으로 다시 분류"""
+        if db.get_meta("type_v2"):
+            return 0
+        n = 0
+        with db.conn() as c:
+            rows = c.execute("SELECT acptno, report_nm, plan_name, attachments, kind_type FROM filings "
+                             "WHERE kind_type LIKE '이행%'").fetchall()
+        for r in rows:
+            atts = [a.get("name", "") for a in json.loads(r["attachments"] or "[]")]
+            t = kind.classify(r["report_nm"], r["plan_name"] or "", "", atts)
+            if t != r["kind_type"]:
+                db.update_filing(r["acptno"], kind_type=t)
+                n += 1
+        db.set_meta("type_v2", db.now())
+        log.info("공시 구분 다시 분류: %d건", n)
+        return n
+
     def recheck_unverified(self, days=None):
         """⚠ 첨부 미확인(KIND 막혔을 때 DART로만 들어온 공시) → KIND가 열리면 다시 확인
         첨부가 실제로 없으면 valid=0이 되어 목록에서 빠지고, 있으면 ⚠가 사라짐"""
@@ -383,6 +401,7 @@ class Worker:
         from . import pubsync
         self.refresh_corp_map()
         self.sync_coverage()
+        self.reclassify_once()
         pubsync.pull()                             # 사이트에서 한 발간 체크 반영
         telegram.process_updates_once()            # 텔레그램 발간 체크 버튼/명령 반영
         self.process_additions()                   # 사이트에서 요청한 과거 공시 추가

@@ -277,8 +277,9 @@ def classify(title: str, plan_name: str = "", main_content: str = "", att_names=
         return re.sub(r"\s+", "", s or "")
 
     head = n(title) + "|" + n(plan_name) + "|" + "|".join(n(a) for a in att_names)
-    body = n(main_content)[:300]
-    impl = "이행" in head or bool(re.search(r"이행(현황|실적|점검|평가|내역|사항)", body))
+    # 본문은 보지 않음: 계획서 서식 자체에 '5. 이행평가 - 해당사항 없음(최초 공시)' 같은 칸이 있어서
+    # 본문으로 판단하면 신규 계획도 이행으로 잘못 잡힘. 이행 공시는 제목·계획서 명칭·첨부명에 '이행'이 들어감
+    impl = "이행" in head
     # '2025년 이행현황 및 2026년 기업가치제고계획' 처럼 새 계획도 같이 낸 경우
     plan_too = bool(re.search(r"(및|&|과|와|,)\d{4}년?[^|]{0,30}기업가치제고계획", head)) or \
         bool(re.search(r"기업가치제고계획\(?(수립|신규|갱신|업데이트)", head))

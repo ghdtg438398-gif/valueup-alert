@@ -113,3 +113,20 @@ def company_status(code, implset=None) -> str:
     implset = impl_codes() if implset is None else implset
     return "이행 미발간" if code in implset else "이행 미공시"
 
+
+
+def merge_into_remote(remote_path) -> dict:
+    """저장 직전: 저장소의 최신 상태 파일(사람이 사이트에서 고친 것)을 기준으로,
+    이번 실행에서 봇이 바꾼 것(과거 공시 추가 결과)만 얹어서 data/pub_status.json 에 씀.
+    → 줄 단위 git 병합으로 JSON이 섞이는 일 방지"""
+    try:
+        remote = _norm(json.loads(Path(remote_path).read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        remote = load_file()
+    mine = state()
+    for k, v in mine["add"].items():
+        if v.get("done") and k in remote["add"] and not remote["add"][k].get("done"):
+            remote["add"][k] = v
+    PATH.parent.mkdir(parents=True, exist_ok=True)
+    PATH.write_text(json.dumps(remote, ensure_ascii=False, indent=1), encoding="utf-8")
+    return remote

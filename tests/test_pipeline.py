@@ -575,3 +575,43 @@ def test_manual_addition_old_filing(env, tmp_path, monkeypatch):
     assert add["지투파워"]["done"] and "1건 새로 추가" in add["지투파워"]["result"]
     assert add["없는회사"]["done"] and "찾지 못함" in add["없는회사"]["result"]
     assert w.process_additions() == 0                                       # 한 번만 처리
+
+
+def test_merge_state_keeps_site_edits(env, tmp_path, monkeypatch):
+    """봇 저장 때: 사이트에서 그사이 고친 내용은 그대로, 봇은 '과거 공시 추가' 결과만 얹음"""
+    import json
+    from app import pubsync
+    w, db, sent = env
+    monkeypatch.setattr(pubsync, "PATH", tmp_path / "pub_status.json")
+    st = pubsync.state()
+    st["add"]["AK홀딩스"] = {"query": "AK홀딩스", "done": True, "result": "2건 새로 추가"}
+    st["pub"]["111111"] = {"plan": True}                         # 실행 시작 때의 옛 상태
+    pubsync._save_state(st)
+    remote = {"pub": {"111111": {"plan": True, "reject": True, "reject_reason": "미팅 불가"}},
+              "defer": {"007680:plan": {"year": 2027, "reason": "초과"}},
+              "add": {"AK홀딩스": {"query": "AK홀딩스"}, "새회사": {"query": "새회사"}}}
+    (tmp_path / "remote.json").write_text(json.dumps(remote, ensure_ascii=False), encoding="utf-8")
+    out = pubsync.merge_into_remote(tmp_path / "remote.json")
+    saved = json.loads((tmp_path / "pub_status.json").read_text(encoding="utf-8"))
+    assert saved == out
+    assert saved["pub"]["111111"]["reject_reason"] == "미팅 불가"             # 사이트 수정 보존
+    assert saved["defer"]["007680:plan"]["year"] == 2027
+    assert saved["add"]["AK홀딩스"]["done"] and not saved["add"]["새회사"].get("done")
+
+
+def test_plan_template_with_empty_impl_section_is_plan():
+    """계획서 서식의 '5. 이행평가 - 최초 공시로 해당사항 없음' 칸 때문에 이행으로 잡히면 안 됨 (제이엠티 사례)"""
+    from app import kind
+    body = "1. 기업개요\n2. 현황진단\n3. 목표설정\n4. 계획수립\n5. 이행평가\n - 금번 공시는 최초 공시로 해당사항 없음\n6. 소통"
+    assert kind.classify("기업가치 제고 계획(자율공시)(PBR 개선 계획 제출 기업)", "2026년 제이엠티(주) 기업가치 제고 계획",
+                         body, ["붙임] PBR 개선 계획.pdf"]) == "계획"
+    assert kind.classify("기업가치 제고 계획(자율공시)(2025년 이행현황)", "", body) == "이행"
+
+
+def test_reclassify_once(env):
+    w, db, sent = env
+    w.poll_kind(days=1)
+    a = db.list_filings(days=0, limit=5)[0]["acptno"]
+    db.update_filing(a, kind_type="이행", plan_name="2026년 테스트 기업가치 제고 계획", report_nm="기업가치 제고 계획(자율공시)")
+    assert w.reclassify_once() >= 1 and db.get_filing(a)["kind_type"] == "계획"
+    assert w.reclassify_once() == 0                     # 한 번만
