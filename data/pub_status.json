@@ -213,6 +213,17 @@
    "at": "2026-10-28 12:09:11",
    "plan_date": "2025-04-01",
    "plan_by": "김선호"
+  },
+  "009200": {
+   "plan": false,
+   "impl": false,
+   "by": "홍소현",
+   "at": "2026-11-09 14:08:37",
+   "reject": true,
+   "reject_stage": "plan",
+   "reject_reason": "담합 과징금 관련 언급되는 거 신경쓰임",
+   "reject_date": "2026-11-09",
+   "reject_by": "김선호"
   }
  },
  "assign": {
