@@ -224,6 +224,17 @@
    "reject_reason": "담합 과징금 관련 언급되는 거 신경쓰임",
    "reject_date": "2026-11-09",
    "reject_by": "김선호"
+  },
+  "009580": {
+   "plan": false,
+   "impl": false,
+   "by": "홍소현",
+   "at": "2026-11-09 14:08:41",
+   "reject": true,
+   "reject_stage": "plan",
+   "reject_reason": "담합 과징금 관련 언급되는 거 신경쓰임",
+   "reject_date": "2026-11-09",
+   "reject_by": "김선호"
   }
  },
  "assign": {
