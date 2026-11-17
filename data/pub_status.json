@@ -8,6 +8,17 @@
    "plan_date": "2026-09-04",
    "plan_by": "박성순"
   },
+  "101930": {
+   "plan": false,
+   "impl": false,
+   "by": "홍소현",
+   "at": "2026-11-17 15:16:17",
+   "reject": true,
+   "reject_stage": "plan",
+   "reject_reason": "여력 안됨",
+   "reject_date": "2026-11-17",
+   "reject_by": "이원재"
+  },
   "124560": {
    "plan": true,
    "impl": true,
