@@ -257,6 +257,14 @@
    "reject_reason": "IR 담당도 없고 여력도 안됨",
    "reject_date": "2026-11-17",
    "reject_by": "이원재"
+  },
+  "094840": {
+   "plan": false,
+   "impl": true,
+   "by": "김지은",
+   "at": "2026-11-23 14:51:51",
+   "impl_date": "2026-11-06",
+   "impl_by": "백종석"
   }
  },
  "assign": {
